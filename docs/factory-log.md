@@ -43,3 +43,4 @@ One row per backlog task: how the factory executed it and what it cost. It is up
 | T14 | delegated | shared | n/a | n/a | 0 | n/a | Stopped before coding: storage/reference design and image provider decisions are open (see feature doc) |
 | T20/T12b verify | delegated adversarial verifier | 1 | n/a | FAIL: 1 medium (trickled Content-Length body and headers bypass the budget), 4 low | 0 | n/a | Chunked trickle, depth, delimiters and store races held; findings in `odd/findings/t12c-findings.md` |
 | T12c | delegated | 1 | 0 | check.sh pass, 1302 tests, 97.18% | 435+/43- | `53b51d1` | RED: both trickle tests hit the 12 s test timeout on the old code. Watcher thread + tracked sockets; reworked after verification |
+| T13b | delegated | 1 | 0 | check.sh pass, 1309 tests, 97.18% | 152+/14- | `c59044b` | Rework of T13 after verification; also aborts the render job on an interrupted loop (T12c finding 7). Verifier pending |
