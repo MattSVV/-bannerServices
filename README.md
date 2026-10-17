@@ -106,7 +106,17 @@ python3 -m venv ../openlp/.venv
 
 ## Status
 
-Work in progress. See the task list in [`odd/tasks/portadas-plugin.md`](odd/tasks/portadas-plugin.md).
+Feature-complete except one item. The overnight factory run built the library tab, the editor with live preview, the three built-in templates, PNG export, service integration, AI-designed templates (bring your own key), the sanitizer and sandboxed renderer, Spanish UI, packaging and the docs, with 1,445 tests at 97% coverage and independent security verification (see [`docs/security.md`](docs/security.md)).
+
+- **Not built: T14, AI-generated background images.** It is blocked on product and security decisions that belong to the owner (where the image lives, which providers, cost and consent). See the feature document.
+- **Manual checks still pending** (nothing here has been exercised by a human or on another platform):
+  - the GUI checklist in [`docs/testing.md`](docs/testing.md) (adding a cover to the real service and showing it live);
+  - Windows and macOS runs;
+  - the CI workflow, which has never run because the repo has no remote yet;
+  - a review of the Spanish translation by a native speaker;
+  - a live test against a real AI provider (default model ids are unverified).
+
+How the run was executed, including rework and what the verifiers found, is in [`docs/factory-log.md`](docs/factory-log.md). Task list and evidence: [`odd/tasks/portadas-plugin.md`](odd/tasks/portadas-plugin.md).
 
 ## License
 
