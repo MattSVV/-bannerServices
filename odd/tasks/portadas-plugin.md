@@ -88,6 +88,7 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T11
 - [x] T09b (editor defects from verification)
 - [ ] T20 (intermittent test-suite hang, found by orchestrator)
+- [ ] T12b (AI adapter hardening, findings in `odd/findings/t12b-findings.md`)
 - [x] T12
 - [ ] T13
 - [ ] T14
@@ -131,7 +132,7 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 | T11 | done | `8c0b962` | RED: ModuleNotFoundError ×4, then GREEN 1059. Secrets in `portadas/secrets/api-keys` (dir 0700, file 0600, atomic, DPAPI on Windows, mocked test), never in QSettings; log redaction filter; settings tab. Runtime: `Portadas settings tab created`, 0 errors. Orchestrator spot check: 1059 passed. Default model ids unverified → T12. |
 | T09b | done | `66fa62e` | RED 13/14, then GREEN 1074. Save re-entrancy guard and stable id, icon sanitized before QtSvg, form deleteLater, PNG pixel cap before decode, PNG chunk/CRC/IEND check, `\A...\Z` id patterns. |
 | T12 | done | `9a21107` | Weak RED (import errors), then GREEN 1241, 97.2%. Port `CoverDesigner`, `DesignCoverWithAI` (one repair round), adapters for OpenAI, Anthropic, Gemini (key in header) and OpenAI-compatible; redirects refused; retries bounded; async test connection. Defaults the writer checked against provider docs on 2026-10-17: `claude-haiku-5-5`, `gpt-6-luna`, `gemini-3.5-flash-lite` (OpenAI JSON mode unconfirmed). No live provider test (no keys). Headless OK. |
-| T20 | open | | The orchestrator's spot check of `scripts/check.sh` hung for more than 6 minutes with pytest spinning on CPU; an immediate rerun passed in 24 s. The T06b verifier saw a similar stall. Capturing the stack with `faulthandler_timeout`. |
+| T20 | open | | The orchestrator's spot check of `scripts/check.sh` hung for more than 6 minutes with pytest spinning on CPU; an immediate rerun passed in 24 s. The T06b verifier saw a similar stall. Loop of 8 runs: 1 hang (failure at #1152 `test_settings_tab.py::test_test_connection_uses_the_real_adapter_by_default`, hang at #1153 or right after; faulthandler printed nothing, suggesting a C++/GIL deadlock in the `lib/background.py` worker). Plan: find the root cause, add pytest-timeout (thread method, 60 s) plus a `timeout` wrapper in check.sh, prove with 15 runs. |
 
 ## Accepted changes
 
@@ -154,4 +155,5 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 
 ## Next step
 
-T20 (find and fix the intermittent hang, add a per-test timeout to the gate). Then T13/T14, plus an independent verifier for T12.
+Session stopped on 2026-10-17 (usage limit). The writer for T20+T12b was stopped before committing; the tree is clean at the commit that records this.
+Resume: T20 (hang), then T12b, then T13 (editor AI mode), T14, T15-T19. Ask the user to confirm the 6 overnight assumptions and the chain strategy (`stacked-to-main` or `feature-branch-chain`).
