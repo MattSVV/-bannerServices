@@ -27,7 +27,8 @@ so the output is a canonical document whose structure does not depend on how a b
 Policy
     * Only allowlisted HTML and SVG elements survive; every other element is removed together with its content
       (``script``, ``iframe``, ``object``, ``embed``, ``link``, ``meta``, ``base``, ``form``, ``input``, ``a``,
-      ``foreignObject``, ``image``, ``img`` without a bundled src, ...). Comments are removed.
+      ``foreignObject``, ``image`` (except a user-uploaded PNG icon, see ``sanitize_svg``), ``img`` without a bundled
+      src, ...). Comments are removed.
     * Only allowlisted attributes survive. ``on*`` attributes are always dropped; ``href`` / ``xlink:href`` are kept
       only as ``#fragment``; ``<style>`` blocks and ``style`` attributes are tokenized, validated and re-serialized by
       ``css_policy`` (what survives is canonical CSS, never the original text); placeholders are allowed in text and as
@@ -42,6 +43,8 @@ Policy
 Removals are reported as non-fatal ``Violation`` objects; the rest of the template is still usable. Fatal violations
 make ``SanitizeResult.accepted`` false and ``SanitizeResult.html`` ``None``.
 """
+import base64
+import binascii
 import html as html_lib
 import re
 from dataclasses import dataclass
@@ -62,6 +65,8 @@ from .css_policy import (
 MAX_BYTES = 200 * 1024
 MAX_DEPTH = 24
 MAX_ELEMENTS = 5000
+MAX_PNG_ICON_BYTES = 96 * 1024  # decoded size of a PNG embedded in an uploaded icon
+PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
 HTML_TAGS = frozenset({
     'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'li', 'br', 'hr', 'strong', 'em', 'b', 'i',
@@ -86,6 +91,7 @@ SAFE_ATTRIBUTES = frozenset({
     'in', 'in2', 'result', 'mode', 'type', 'values', 'operator', 'flood-color', 'flood-opacity', 'color', 'display',
     'visibility', 'vector-effect'})
 
+_PNG_DATA_URI = re.compile(r'^data:image/png;base64,([A-Za-z0-9+/]+={0,2})$')
 _ID = re.compile(r'^[A-Za-z][A-Za-z0-9_:.-]{0,63}$')
 _CLASS_TOKEN = re.compile(r'^[A-Za-z_][A-Za-z0-9_-]{0,63}$')
 _HOOK = re.compile(r'\{\{\s*' + EMPTY_FIELDS + r'\s*\}\}')
@@ -140,9 +146,9 @@ class _Placeholder:
 class _Builder(HTMLParser):
     """Collects an allowlisted tree and the problems found on the way."""
 
-    def __init__(self, tags, allow_style):
+    def __init__(self, tags, allow_style, png_images=False):
         super().__init__(convert_charrefs=True)
-        self.tags, self.allow_style = tags, allow_style
+        self.tags, self.allow_style, self.png_images = tags, allow_style, png_images
         self.root = []
         self.stack = []
         self.skip = []
@@ -289,6 +295,8 @@ class _Builder(HTMLParser):
         if name == 'id':
             return value if _ID.match(value) else None
         if name in ('href', 'xlink:href'):
+            if tag == 'image' and self.png_images:
+                return value if _is_png_data_uri(value) else None
             return value if tag in HREF_TAGS and FRAGMENT_URL.match(value) else None
         if name == 'src':
             return value if tag == 'img' and ASSET_URL.match(value) else None
@@ -302,6 +310,18 @@ def _clean_class(value):
     if all(token == _HOOK_TOKEN or _CLASS_TOKEN.match(token) for token in tokens):
         return ' '.join(tokens)
     return None
+
+
+def _is_png_data_uri(value):
+    """True for ``data:image/png;base64,...`` that is strict base64, small enough and really starts like a PNG."""
+    match = _PNG_DATA_URI.match(value)
+    if match is None or len(match.group(1)) > MAX_PNG_ICON_BYTES * 4 // 3 + 4:
+        return False
+    try:
+        data = base64.b64decode(match.group(1), validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    return len(data) <= MAX_PNG_ICON_BYTES and data.startswith(PNG_SIGNATURE)
 
 
 def _plain_value_ok(value):
@@ -367,7 +387,7 @@ def _serialise(nodes):
     return ''.join(parts)
 
 
-def _prepare(untrusted, tags, allow_style):
+def _prepare(untrusted, tags, allow_style, png_images=False):
     """Parse ``untrusted``; returns ``(builder, violations)`` or ``(None, violations)`` on a fatal early problem."""
     if not isinstance(untrusted, str):
         raise TemplateError('The template must be text.')
@@ -375,7 +395,7 @@ def _prepare(untrusted, tags, allow_style):
         return None, [Violation('too-large', f'The template is larger than {MAX_BYTES // 1024} KB.', True)]
     if _CONTROL.search(untrusted):
         return None, [Violation('control-characters', 'The template contains control characters.', True)]
-    builder = _Builder(tags, allow_style)
+    builder = _Builder(tags, allow_style, png_images)
     try:
         builder.feed(untrusted)
         builder.close()
@@ -427,13 +447,18 @@ def require_safe_template(untrusted, required=('title_main',)):
     return result.html
 
 
-def sanitize_svg(untrusted):
+def sanitize_svg(untrusted, allow_png_image=False):
     """
     Sanitize an untrusted inline SVG icon: exactly one ``<svg>`` root, SVG elements only, no text, no styles.
 
+    :param allow_png_image: opt-in for icons the *user* uploads (a PNG wrapped in an SVG). It additionally allows
+        ``<image href="data:image/png;base64,...">``: strict base64 that decodes to at most ``MAX_PNG_ICON_BYTES``
+        and starts with the PNG signature. Any other ``href`` on it is dropped. Never use it for AI content.
+
     :return: a ``SanitizeResult`` whose ``html`` is the cleaned ``<svg>`` element, or ``None`` when rejected.
     """
-    builder, violations = _prepare(untrusted, SVG_TAGS, allow_style=False)
+    tags = SVG_TAGS | {'image'} if allow_png_image else SVG_TAGS
+    builder, violations = _prepare(untrusted, tags, allow_style=False, png_images=allow_png_image)
     if builder is None:
         return SanitizeResult(None, tuple(violations))
     for node in builder.root:

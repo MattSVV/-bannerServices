@@ -85,9 +85,10 @@ class CreateCoverFromTemplate:
         if icon.kind is IconKind.BUILTIN:
             return self.icons.svg(icon.value)
         if icon.kind is IconKind.INLINE_SVG:
-            result = sanitize_svg(icon.value)
+            # Inline icons come from the user's own uploads (never from AI), so an embedded PNG is allowed.
+            result = sanitize_svg(icon.value, allow_png_image=True)
             if not result.accepted:
                 reasons = '; '.join(violation.message for violation in result.violations)
                 raise CoverError(f'The icon SVG was rejected: {reasons}')
             return result.html
-        raise CoverError('Uploaded icons are not supported yet.')
+        raise CoverError('Uploaded icon files are not supported; upload an SVG or PNG instead.')

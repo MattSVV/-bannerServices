@@ -38,6 +38,13 @@ Goals, in order of importance:
   and `quotes` accept only `none`.
 - **Icons** (`sanitize_svg`): one `<svg>` root, SVG elements only, no text at all (not even a placeholder-looking one),
   `style` attributes go through the same CSS policy.
+- **Uploaded icons** (the editor's Upload button). These are the *user's own* files, never AI output, and they pass
+  `application/icon_upload.py` first. An SVG with active content (script, event handler, `foreignObject`, animation,
+  link), text or an embedded image is **rejected**, not silently cleaned; a clean one is stored as the sanitizer's
+  rebuilt markup. A PNG is scaled down by the UI (at most 256 px, 96 KB), then wrapped in an SVG `<image>` with a
+  `data:image/png;base64,` URI. Only `sanitize_svg(..., allow_png_image=True)` accepts that `<image>`: strict base64,
+  at most 96 KB decoded, PNG signature, any other `href` dropped. `sanitize_template` has no such option, so AI
+  templates can never carry an `<image>`. The stored icon is sanitised again with the option on every render.
 
 ### Residual risks (accepted)
 

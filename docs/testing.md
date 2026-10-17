@@ -92,3 +92,42 @@ Visual evidence: `scripts/render_samples.py` renders every built-in template wit
 Overflow detection finds fields by CSS class (the placeholder name with `_` turned into `-`: `title-main`, `subtitle`,
 `key-verse`...). A field is reported when its text is wider than its box, leaves the canvas, or collides with another
 field. Templates that do not use these class names get a render but no overflow report.
+
+## UI tests (pytest-qt)
+
+`tests/test_edit_form.py` (the cover editor) and `tests/test_mediaitem.py` (the library tab) run the real widgets with
+fakes behind the ports (`tests/fakes.py`: an in-memory repository and a renderer the test drives by hand). Message
+boxes and file choosers are overridden in the tests, so nothing opens a modal window. The `openlp_env` fixture in
+`tests/conftest.py` gives widgets what they need from OpenLP (a `Registry` with a `Settings` backed by a temp file).
+
+Things worth knowing:
+
+- A community plugin must register the default shortcuts of its list view itself
+  (`shortcuts/listViewPortadas*Item`), otherwise OpenLP raises `KeyError` when it builds the library tab. The media
+  item does this when it is created (`QKeySequence` needs a `QApplication`).
+- The live preview renders one cover at a time. Edits restart a 400 ms debounce timer; a render that finishes after
+  the user kept typing is dropped and a fresh one starts.
+
+## Manual GUI checklist (library tab and editor)
+
+Run OpenLP with the plugin installed (`scripts/dev-install.sh`) and tick each line. Each step says what you should see.
+
+- [ ] **Open the tab.** Enable the plugin in *Settings > Plugins* (restart if asked). A **Covers** tab appears in the
+  media manager. Empty at first.
+- [ ] **Create.** Click *New*. Type a main title ("Resistir"), an accent title, a subtitle, a key verse ("Santiago 4:7")
+  and two readings, one per line. After about half a second the preview on the right shows the cover. *Save* is
+  greyed out while it renders.
+- [ ] **Validation.** Type `Xyz 99:99` as a reading: a red message names the line. The preview stops updating until
+  you fix it. Clearing the main title and pressing *Save* shows a message box, not a crash.
+- [ ] **Overflow.** Type a very long main title: an amber warning appears next to that field.
+- [ ] **Templates and icons.** Click each template (thumbnails appear a few seconds after opening) and a few icons;
+  the preview follows.
+- [ ] **Upload an icon.** *Upload...* with a small PNG: it appears as "Uploaded" and the preview shows it. Try an SVG
+  you drew; then a hostile SVG (one with a `<script>`): it is rejected with a message.
+- [ ] **Save.** *Save* closes the dialog; the cover is in the list with a thumbnail, newest first.
+- [ ] **Edit.** Select it, click *Edit* (or the context menu). The fields are filled in; change the title, *Save*:
+  the list shows the new title and thumbnail, and there is still only one entry.
+- [ ] **Filter.** Type part of a title in the filter box (accents and case ignored): the list narrows.
+- [ ] **Export.** Right-click > *Export PNG...*, choose a file. Open it: 1920x1080. Export again to the same file:
+  the dialog asks before overwriting.
+- [ ] **Delete.** Select a cover, *Delete*, answer *No*: nothing happens. Answer *Yes*: it disappears.

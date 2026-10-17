@@ -170,7 +170,7 @@ def test_valid_icons(kind, value):
     (IconKind.UPLOADED, '.hidden'),
     (IconKind.UPLOADED, 'a/b.png'),
     (IconKind.INLINE_SVG, ''),
-    (IconKind.INLINE_SVG, '<svg>' + 'x' * 30000 + '</svg>'),
+    (IconKind.INLINE_SVG, '<svg>' + 'x' * 150000 + '</svg>'),
 ])
 def test_invalid_icons(kind, value):
     with pytest.raises(CoverError):

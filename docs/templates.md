@@ -40,7 +40,8 @@ Fonts are bundled (SIL OFL, licenses next to them) in `portadas/assets/fonts/` a
 - `sanitize_template(html, required=('title_main',)) -> SanitizeResult(html, violations)`; `result.accepted` is false
   and `result.html` is `None` when a fatal violation exists.
 - `require_safe_template(html, required)` returns the sanitized HTML or raises `TemplateRejected` (has `.violations`).
-- `sanitize_svg(svg) -> SanitizeResult` for an inline SVG icon (one `<svg>` root, no text, no styles).
+- `sanitize_svg(svg, allow_png_image=False) -> SanitizeResult` for an inline SVG icon (one `<svg>` root, no text, no
+  styles). `allow_png_image=True` is only for icons the user uploads (see `docs/security.md`), never for AI content.
 
 The output is rebuilt from an allowlist as a canonical document. Disallowed elements, `on*` attributes, remote
 `href`/`url()` and unsafe CSS are removed and reported (non-fatal). Hard-coded visible text (including anything CSS could

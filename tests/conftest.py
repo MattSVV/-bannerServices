@@ -68,3 +68,20 @@ def community_module_name():
     """The module name OpenLP derives for the plugin entry point."""
     from openlp.core.common import path_to_module
     return path_to_module(Path('plugins') / PLUGIN_NAME / f'{PLUGIN_NAME}plugin.py', community=True)
+
+
+@pytest.fixture
+def openlp_env(qapp, tmp_path):
+    """The bits of OpenLP's global state widgets need: a Registry holding a Settings object backed by a temp file."""
+    from openlp.core.common.registry import Registry
+    from openlp.core.common.settings import Settings
+    Registry.create()
+    Settings.set_filename(str(tmp_path / 'openlp-test.ini'))
+    settings = Settings()
+    settings.setDefaultFormat(QtCore.QSettings.Format.IniFormat)
+    settings.init_default_shortcuts()
+    Registry().register('settings', settings)
+    Registry().register('settings_thread', settings)
+    Registry().register('application', qapp)
+    yield settings
+    Registry._instances = {}

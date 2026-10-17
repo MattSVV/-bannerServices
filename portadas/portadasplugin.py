@@ -53,6 +53,12 @@ class PortadasPlugin(Plugin):
         State().add_service('portadas', self.weight, is_plugin=True)
         State().update_pre_conditions('portadas', self.check_pre_conditions())
 
+    def finalise(self):
+        """Release the renderer, then remove the library tab."""
+        if self.media_item:
+            self.media_item.shutdown()
+        super().finalise()
+
     @staticmethod
     def about():
         return translate('PortadasPlugin', '<strong>Portadas Plugin</strong>'

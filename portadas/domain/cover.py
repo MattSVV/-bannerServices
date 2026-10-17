@@ -37,7 +37,7 @@ MAX_TITLE = 80
 MAX_SUBTITLE = 240
 MAX_READINGS = 12
 MAX_RAW_READINGS = 30  # raw reading lines accepted by ``from_raw`` before any parsing
-MAX_INLINE_SVG = 20000
+MAX_INLINE_SVG = 140000  # room for an uploaded PNG (96 KB, base64) wrapped in an SVG
 
 _SAFE_ID = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 SLUG_PATTERN = re.compile(r'^[a-z0-9][a-z0-9-]{0,39}$')
