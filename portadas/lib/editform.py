@@ -442,14 +442,18 @@ class CoverEditForm(QtWidgets.QDialog):
             self._set_status(problem or translate('PortadasPlugin.EditForm', 'Fix the marked fields to see the '
                                                   'preview.'), error=True)
             return
+        started = False
         try:
             html, base_dir = self.services.creator.compose(cover)
             self._busy = True
             self._set_status(translate('PortadasPlugin.EditForm', 'Rendering the preview...'))
             self.services.renderer.render_async(html, base_dir, self._preview_done, self._preview_failed)
+            started = True
         except (DomainError, RenderError) as error:
-            self._busy = False
             self._set_status(str(error), error=True)
+        finally:
+            if not started:
+                self._busy = False  # whatever went wrong, never leave the dialog waiting for a render that never began
 
     def _preview_done(self, result):
         if self._closed:  # the dialog is gone: its widgets may already be deleted

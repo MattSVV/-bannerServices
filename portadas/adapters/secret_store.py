@@ -222,17 +222,32 @@ class FileSecretStore(SecretStore):
         if problem or content is None:
             # An untrusted or unreadable file is never merged into the new one (its content may have been altered by
             # someone else), but it is not dropped either: it is kept, with owner-only access, as the one backup.
-            backup = self.path.with_name(FILE_NAME + CORRUPT_SUFFIX)
+            backup = self._backup_path()
             try:
                 os.replace(self.path, backup)
                 self._make_private(backup)
             except OSError:
-                raise SecretStoreError('The stored API keys cannot be trusted or read and could not be backed up.'
+                log.error('The API key file could not be moved to %s.', backup.name)
+                raise SecretStoreError('The stored API keys cannot be trusted or read and could not be backed up. '
+                                       f'Remove or rename "{backup.name}" in the secrets folder and try again.'
                                        ) from None
             log.warning('The API key file %s; it was kept as %s and a new one is started.',
                         f'was refused: {problem}' if problem else 'could not be read', backup.name)
             return {}, {}
         return content
+
+    def _backup_path(self):
+        """``api-keys.corrupt``, or a timestamped name when something other than a regular file already uses it."""
+        backup = self.path.with_name(FILE_NAME + CORRUPT_SUFFIX)
+        try:
+            blocked = not stat.S_ISREG(os.lstat(backup).st_mode)
+        except FileNotFoundError:
+            return backup
+        except OSError:
+            blocked = True
+        if blocked:
+            return backup.with_name(f'{backup.name}-{time.strftime("%Y%m%dT%H%M%S")}-{os.getpid()}')
+        return backup
 
     def _make_private(self, path):
         """Owner-only access for a moved-aside regular file (a symlink is left alone: chmod would follow it)."""

@@ -158,6 +158,10 @@ class FileCoverRepository(CoverRepository):
         except OSError as error:
             log.warning('Could not save cover "%s": %s', cover.id, error)
             raise RepositoryError(f'The cover could not be saved: {_reason(error)}.') from error
+        except UnicodeError:  # text that cannot be written as UTF-8 (a lone surrogate)
+            log.warning('Could not save cover "%s": its text cannot be encoded.', cover.id)
+            raise RepositoryError('The cover could not be saved: it contains a character that cannot be stored.'
+                                  ) from None
 
     @staticmethod
     def _restore_png(png_path, previous_png):

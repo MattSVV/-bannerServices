@@ -58,6 +58,7 @@ import re
 from dataclasses import dataclass
 
 CSS_REJECTED = 'css-rejected'
+MAX_PROBLEMS = 100  # distinct problems reported for one stylesheet; more means the whole sheet is refused
 CSS_CONTENT_TEXT = 'css-content-text'
 
 # A url() may point to a fragment of the same document or to a bundled font/background next to the templates.
@@ -658,10 +659,20 @@ class _Sanitizer:
         self.t = tokens
         self.match = _match_brackets(tokens)
         self.problems = []
+        self._seen = set()
+        self.overflowed = False
 
     def problem(self, problem):
-        if problem not in self.problems:
-            self.problems.append(problem)
+        """Collect a problem once; past ``MAX_PROBLEMS`` distinct ones the whole sheet is refused (fail closed)."""
+        if problem in self._seen:
+            return
+        if len(self.problems) >= MAX_PROBLEMS:
+            if not self.overflowed:
+                self.overflowed = True
+                self.problems.append(CssProblem(CSS_REJECTED, 'The stylesheet has too many problems.'))
+            return
+        self._seen.add(problem)
+        self.problems.append(problem)
 
     def reject(self, message):
         self.problem(CssProblem(CSS_REJECTED, message))
@@ -797,6 +808,8 @@ def _run(css, declarations):
             raise CssSyntaxError('the result does not read back the same')
     except CssSyntaxError as error:
         return CssResult('', (CssProblem(CSS_REJECTED, f'The CSS could not be read safely ({error}).'),))
+    if sanitizer.overflowed:  # so many problems that nothing in this sheet is trusted: keep none of it
+        return CssResult('', tuple(sanitizer.problems))
     return CssResult(text, tuple(sanitizer.problems))
 
 

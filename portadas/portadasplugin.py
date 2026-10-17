@@ -42,7 +42,7 @@ from .security.redaction import install_log_redaction
 log = logging.getLogger(__name__)
 
 # Every record of the plugin is cleaned of API keys before OpenLP's handlers see it.
-install_log_redaction()
+install_log_redaction(__name__.rpartition('.')[0] or __name__)  # the package this plugin is loaded as
 
 # OpenLP reads '<name>/status' while a plugin is instantiated, so the default must exist at import time.
 Settings.extend_default_settings({'portadas/status': PluginStatus.Inactive})

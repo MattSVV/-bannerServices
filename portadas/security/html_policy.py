@@ -47,6 +47,7 @@ import base64
 import binascii
 import html as html_lib
 import re
+from collections import Counter
 from dataclasses import dataclass
 from html.parser import HTMLParser
 
@@ -98,7 +99,7 @@ _HOOK = re.compile(r'\{\{\s*' + EMPTY_FIELDS + r'\s*\}\}')
 _HOOK_TOKEN = '{{' + EMPTY_FIELDS + '}}'
 _TEXT_PLACEHOLDER = re.compile(r'^\{\{\s*([A-Za-z0-9_]+)\s*\}\}$')
 _LANG = re.compile(r'^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$')
-_CONTROL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
+_CONTROL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff]')  # control characters and lone surrogates
 
 
 @dataclass(frozen=True)
@@ -152,6 +153,7 @@ class _Builder(HTMLParser):
         self.root = []
         self.stack = []
         self.skip = []
+        self._skipping = Counter()  # open skipped elements by tag name: ``tag in skip`` as a lookup, not a scan
         self.styles = []
         self.violations = []
         self.html_lang = None
@@ -180,7 +182,7 @@ class _Builder(HTMLParser):
         self.elements += 1
         if self.skip:
             if tag not in VOID_TAGS:
-                self.skip.append(tag)
+                self._skip(tag)
             return
         if tag in TRANSPARENT_TAGS:
             self._transparent(tag, attrs)
@@ -193,7 +195,11 @@ class _Builder(HTMLParser):
                 self.report('element-removed', f'The <{tag}> element is not allowed and was removed.')
             self.top_level_removed = self.top_level_removed or not self.stack
             if tag not in VOID_TAGS:
-                self.skip.append(tag)
+                self._skip(tag)
+
+    def _skip(self, tag):
+        self.skip.append(tag)
+        self._skipping[tag] += 1
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)
@@ -202,9 +208,12 @@ class _Builder(HTMLParser):
 
     def handle_endtag(self, tag):
         if self.skip:
-            if tag in self.skip:
-                while self.skip.pop() != tag:
-                    pass
+            if self._skipping[tag] > 0:
+                while True:
+                    popped = self.skip.pop()
+                    self._skipping[popped] -= 1
+                    if popped == tag:
+                        break
             return
         if tag == 'style' and self._style is not None:
             self._finish_style()

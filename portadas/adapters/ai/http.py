@@ -160,6 +160,7 @@ class HttpDesigner(CoverDesigner):
                     raise self._too_slow()  # the pause alone would use up what is left of the budget
                 return delay
             raw = self._read(response, deadline)
+            watch.answered = watch.reason is None  # a read the watcher cut short can end quietly: not an answer
             if 200 <= status < 300:
                 return self._load(raw)
             raise DesignError(self._status_message(status, raw))
@@ -192,7 +193,9 @@ class HttpDesigner(CoverDesigner):
         thread.start()
         try:
             yield watch
-        except Exception:
+        except Exception as error:
+            if watch.answered and isinstance(error, DesignError):
+                raise  # the provider's own answer (a 401, a quota message) beats a deadline that fired right after it
             if watch.reason == 'cancelled':
                 raise DesignError('The request was cancelled.') from None
             if watch.reason == 'deadline':
@@ -302,6 +305,7 @@ class _Watch:
         self.sockets = []
         self.response = None
         self.reason = None
+        self.answered = False  # the whole answer was read: a deadline that fires now has not cut anything off
 
     def stop(self, reason):
         self.reason = reason

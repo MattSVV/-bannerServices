@@ -27,10 +27,12 @@ scheme, a ``file:`` URL with a remote host, and anything unparsable is blocked. 
 thread-safe, because QtWebEngine calls its interceptor on the IO thread.
 """
 import os
+import re
 from urllib.parse import urlsplit
 from urllib.request import url2pathname
 
 _LOCAL_HOSTS = ('', 'localhost')
+_DRIVE = re.compile(r'\A[A-Za-z]:')
 
 
 def is_url_allowed(url, roots):
@@ -43,9 +45,13 @@ def is_url_allowed(url, roots):
     if not isinstance(url, str) or not url:
         return False
     try:
-        parts = urlsplit(url)
-    except ValueError:
+        return _allowed(url, roots)
+    except (OSError, ValueError, UnicodeError):  # a filter that raises must never mean "allowed"
         return False
+
+
+def _allowed(url, roots):
+    parts = urlsplit(url)
     scheme = parts.scheme.lower()
     if scheme == 'data':
         return True
@@ -53,6 +59,8 @@ def is_url_allowed(url, roots):
         return False
     path = url2pathname(parts.path)
     if not path or '\x00' in path:
+        return False
+    if _DRIVE.match(path) and ':' in path[2:]:  # Windows: ``file.png:stream`` names an NTFS alternate data stream
         return False
     return _inside_any(os.path.realpath(path), roots)
 

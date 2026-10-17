@@ -314,6 +314,14 @@ MESSAGES = {
     'The SVG file is too large (at most {} KB).': 'El archivo SVG es demasiado grande (máximo %1 KB).',
     'The SVG file was rejected: {}': 'Se rechazó el archivo SVG: %1',
     'The file is not a PNG image.': 'El archivo no es una imagen PNG.',
+    'The cover contains a character that cannot be displayed.':
+        'La portada contiene un carácter que no se puede mostrar.',
+    'The cover could not be saved: it contains a character that cannot be stored.':
+        'No se pudo guardar la portada: contiene un carácter que no se puede almacenar.',
+    'The stored API keys cannot be trusted or read and could not be backed up. Remove or rename "{}" in the secrets '
+    'folder and try again.':
+        'Las claves de API guardadas no son de confianza o no se pueden leer, y no se pudo hacer una copia. Elimine '
+        'o renombre "%1" en la carpeta de secretos e inténtelo de nuevo.',
     'The icon must be a regular file.': 'El icono debe ser un archivo normal.',
     'The file could not be read: {}.': 'No se pudo leer el archivo: %1.',
     'The image file is too large.': 'El archivo de imagen es demasiado grande.',

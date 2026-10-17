@@ -35,7 +35,7 @@ from .ports import DesignRequest
 
 MAX_HINT_CHARS = 300
 MAX_PROBLEM_CHARS = 300
-MAX_PREVIOUS_CHARS = 60000
+MAX_PREVIOUS_CHARS = 30000
 REQUIRED = ('title_main',)
 
 # Font families bundled with the plugin -> the file a template loads (docs/templates.md).
@@ -183,9 +183,10 @@ def _one_line(value):
 
 
 def _strip_delimiters(text):
-    """Remove ``<<<`` and ``>>>`` runs until none is left: removing one can join its neighbours into a new one."""
-    while True:
-        stripped = _DELIMITERS.sub('', text)
-        if stripped == text:
-            return text
-        text = stripped
+    """
+    Defuse ``<<<`` and ``>>>`` runs in one pass by turning their brackets into look-alikes (``‹`` ``›``).
+
+    Deleting them would be wrong twice: the neighbours can join into a new run, which needs a loop that is quadratic
+    on crafted text, whereas a replacement character can never form a delimiter.
+    """
+    return _DELIMITERS.sub(lambda found: found.group().replace('<', '\u2039').replace('>', '\u203a'), text)

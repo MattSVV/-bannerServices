@@ -93,7 +93,7 @@ def _clean_line(value, what, limit, required=False):
 
 def _reject_invisible(text, what):
     for char in text:
-        if char != '\n' and unicodedata.category(char) in ('Cc', 'Cf', 'Zl', 'Zp'):
+        if char != '\n' and unicodedata.category(char) in ('Cc', 'Cf', 'Cs', 'Zl', 'Zp'):
             raise CoverError(f'The {what} contains a control or invisible formatting character.')
 
 

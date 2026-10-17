@@ -165,8 +165,14 @@ class _Interceptor(QtWebEngineCore.QWebEngineUrlRequestInterceptor):
         self._roots = tuple(str(root) for root in roots)
 
     def interceptRequest(self, info):
-        url = info.requestUrl().toString(QtCore.QUrl.FullyEncoded)
-        if not is_url_allowed(url, self._roots):
+        try:
+            url = info.requestUrl().toString(QtCore.QUrl.FullyEncoded)
+            allowed = is_url_allowed(url, self._roots)
+        except Exception:  # noqa: BLE001 - an error in the filter must block the request, never let it through
+            log.warning('Cover request blocked: the filter failed.')
+            info.block(True)
+            return
+        if not allowed:
             log.debug('Blocked cover request: %s', url[:200])
             info.block(True)
 
@@ -422,7 +428,11 @@ class QtCoverRenderer(CoverRenderer):
         size = _check_size(size)
         if QtWidgets.QApplication.instance() is None:
             raise RenderError('No QApplication is running.')
-        if not isinstance(html, str) or len(html.encode('utf-8')) > MAX_HTML_BYTES:
+        try:
+            too_big = not isinstance(html, str) or len(html.encode('utf-8')) > MAX_HTML_BYTES
+        except UnicodeError:  # a lone surrogate cannot be encoded
+            raise RenderError('The cover contains a character that cannot be displayed.') from None
+        if too_big:
             raise RenderError('The cover HTML is missing or larger than 2 MB.')
         job = _RenderJob(self, html, base_dir, size, on_done, on_error)
         self._jobs.add(job)
