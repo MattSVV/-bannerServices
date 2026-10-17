@@ -22,11 +22,13 @@
 Cooperative cancellation for blocking calls that run on a worker thread.
 
 The worker binds the job's ``threading.Event`` for the duration of its work (``bound``); a long call, such as an HTTP
-request to an AI provider, looks at ``is_cancelled()`` between chunks and between attempts and stops early. Nothing is
-interrupted forcibly: a call that is waiting on the network ends at its own deadline. Pure Python.
+request to an AI provider, looks at ``is_cancelled()`` between chunks and between attempts and stops early, and
+pauses with ``wait``. A call that is blocked on the network is aborted by the caller's own watcher
+(``adapters/ai/http.py``), which polls ``is_cancelled()``. Pure Python.
 """
 import contextlib
 import threading
+import time
 
 CancelEvent = threading.Event
 _state = threading.local()
@@ -47,3 +49,17 @@ def is_cancelled():
     """True when the work running on this thread was cancelled."""
     event = getattr(_state, 'event', None)
     return event is not None and event.is_set()
+
+
+def current_event():
+    """The cancellation event bound to the current thread, or ``None``."""
+    return getattr(_state, 'event', None)
+
+
+def wait(seconds):
+    """Sleep up to ``seconds``, waking at once when the job is cancelled. Returns True when it was cancelled."""
+    event = current_event()
+    if event is None:
+        time.sleep(seconds)
+        return False
+    return event.wait(seconds)

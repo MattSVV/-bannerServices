@@ -194,8 +194,9 @@ class FileSecretStore(SecretStore):
 
     def _read_for_update(self):
         """
-        The keys to modify. Like ``_read``, but an existing file that cannot be parsed or decrypted is first moved to
-        ``api-keys.corrupt`` (one backup, the latest) instead of being overwritten without a trace.
+        The keys to modify. Like ``_read``, but an existing file that cannot be parsed or decrypted, or that is
+        untrusted (loose permissions, another owner, a symlink), is first moved to ``api-keys.corrupt`` (one backup,
+        the latest, made owner-only) instead of being overwritten without a trace.
         """
         try:
             info = os.lstat(self.path)
@@ -203,19 +204,27 @@ class FileSecretStore(SecretStore):
             return {}
         except OSError:
             raise SecretStoreError('The stored API keys could not be inspected.') from None
-        if self._trust_problem(info):
-            return self._read()  # untrusted files are ignored, and the write replaces them with a private one
-        keys = self._parse()
-        if keys is None:
+        problem = self._trust_problem(info)
+        keys = None if problem else self._parse()
+        if problem or keys is None:
+            # An untrusted or unreadable file is never merged into the new one (its content may have been altered by
+            # someone else), but it is not dropped either: it is kept, with owner-only access, as the one backup.
             backup = self.path.with_name(FILE_NAME + CORRUPT_SUFFIX)
             try:
                 os.replace(self.path, backup)
+                self._make_private(backup)
             except OSError:
-                raise SecretStoreError('The stored API keys are unreadable and could not be backed up.') from None
-            log.warning('The API key file could not be read; it was kept as %s and a new one is started.',
-                        backup.name)
+                raise SecretStoreError('The stored API keys cannot be trusted or read and could not be backed up.'
+                                       ) from None
+            log.warning('The API key file %s; it was kept as %s and a new one is started.',
+                        f'was refused: {problem}' if problem else 'could not be read', backup.name)
             return {}
         return keys
+
+    def _make_private(self, path):
+        """Owner-only access for a moved-aside regular file (a symlink is left alone: chmod would follow it)."""
+        if self.platform == 'posix' and stat.S_ISREG(os.lstat(path).st_mode):
+            os.chmod(path, 0o600)
 
     def _parse(self):
         """The ``{provider: key}`` of a trusted file, or ``None`` when its content cannot be used."""
@@ -280,7 +289,11 @@ class FileSecretStore(SecretStore):
             raise SecretStoreError('The API key could not be saved. Check the permissions of the OpenLP data '
                                    'folder.') from None
         if self.platform == 'posix':
-            os.chmod(self.directory, 0o700)
+            try:
+                os.chmod(self.directory, 0o700)
+            except OSError:  # for example a folder owned by another user
+                raise SecretStoreError('The API key could not be saved. Check the permissions of the OpenLP data '
+                                       'folder.') from None
 
 
 def _check_provider(provider):

@@ -60,11 +60,14 @@ that the key never appears in OpenLP's settings or their export, in logs, in the
   file (`mkstemp`, mode `0600`, never readable by others even briefly) is flushed with `fsync` and renamed over the old
   one, so a crash or a full disk leaves the previous content intact. When reading, the file is **refused** (a warning
   without the key is logged and the key reads as absent) if it is a symlink, not a regular file, owned by another user,
-  or readable or writable by group or world. Writing replaces such a file with a private one.
+  or readable or writable by group or world. Changing a key over such a file moves it aside to `api-keys.corrupt`
+  (owner-only, so the other providers' keys are not lost) and starts a private one; its content is never merged.
 - **Concurrent changes.** Every change is a read-modify-write under a process lock and, on POSIX, an `flock` on
   `<secrets>/.lock` (bounded wait of 5 s), so two writers cannot drop each other's key. A file that is trusted but
   cannot be parsed or decrypted is moved to `api-keys.corrupt` (one backup) before a new file is started, never
-  overwritten without a trace. A symlinked secrets *directory* is refused: `chmod` would follow it.
+  overwritten without a trace. By design, a second incident replaces the earlier backup (only the latest is kept), and
+  under extreme contention (dozens of processes writing at once) the 5 s wait can run out; the writer then gets "being
+  changed by another OpenLP window" and nothing is lost or half written. A symlinked secrets *directory* is refused: `chmod` would follow it.
 - **Key shape.** The store accepts exactly what the adapters accept (`KEY_PATTERN` in `application/ai_config.py`:
   printable ASCII without spaces, 6-500 characters), so a saved key is always a usable one.
 - **Windows.** The file content is encrypted with DPAPI (`CryptProtectData`, bound to the signed-in Windows user, no UI
@@ -115,7 +118,7 @@ uploaded-PNG option) before it is stored or rendered, and again on every load an
 | No key in errors or logs | Adapters build error messages from fixed text plus a shortened, redacted provider message; exception text from `requests` (which can carry URLs or headers) is never used; `register_secret` makes the exact key redactable |
 | No proxy, no `.netrc` | The session has `trust_env = False`: `HTTP(S)_PROXY` would send the bearer key in clear text to the proxy and `.netrc` could replace the `Authorization` header. A proxy, if ever needed, must be an explicit setting |
 | No redirects | `allow_redirects=False`: a custom auth header would otherwise travel to the redirect target |
-| Bounded | `AiConfig.bounded_timeout` (5-300 s) per wait on the socket, **and a wall-clock budget of twice that timeout for the whole call** (every attempt, backoff and the streaming of the body; checked per chunk, so a server that trickles one byte a second is cut off). At most 2 retries on 429/5xx (1 s, 2 s backoff or `Retry-After`, capped at 10 s; a pause that would use up the budget fails at once), responses refused beyond 2 MB while reading |
+| Bounded | `AiConfig.bounded_timeout` (5-300 s) per wait on the socket, **and a wall-clock budget of twice that timeout for the whole call** (every attempt, backoff and the streaming of the body; a watcher thread per attempt shuts the attempt's sockets down at the deadline or on cancellation, so a server that trickles the headers or the body one byte at a time is cut off even while `requests` is blocked on a read. DNS resolution and the connect phase are not covered by the budget, only by the per-wait timeout). At most 2 retries on 429/5xx (1 s, 2 s backoff or `Retry-After`, capped at 10 s and interrupted by cancellation; a pause that would use up the budget fails at once), responses refused beyond 2 MB while reading |
 | One repair round | A rejected answer is sent back once with the violations; a second rejection is an error, never a loop |
 | Plain `http://` | Only to `localhost`/`127.0.0.1` (OpenAI-compatible), enforced by `validate_base_url` |
 | Off the GUI thread | `lib/background.py` runs the blocking call on a `QThreadPool` and delivers the result on the GUI thread; a closed dialog cancels the job: the request stops at its next checkpoint (between chunks and attempts, `application/cancellation.py`); a wait on the socket ends by its own timeout |

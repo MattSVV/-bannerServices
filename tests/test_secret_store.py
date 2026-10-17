@@ -368,3 +368,44 @@ def test_a_symlinked_secrets_directory_is_refused_and_its_target_left_alone(tmp_
 def test_keys_the_adapters_would_refuse_are_not_saved(store, key):
     with pytest.raises(ValueError):
         store.set_api_key('openai', key)
+
+
+# --- T12c: an untrusted file is backed up, not dropped; a failing chmod is a SecretStoreError ------------------------
+
+@posix_only
+def test_changing_keys_over_an_untrusted_file_keeps_it_as_a_private_backup(store):
+    store.set_api_key('openai', FAKE)
+    store.set_api_key('gemini', 'gem-key-123456')
+    os.chmod(store.path, 0o644)
+
+    store.set_api_key('anthropic', 'ant-key-123456')
+
+    backup = store.directory / 'api-keys.corrupt'
+    saved = json.loads(backup.read_text(encoding='utf-8'))['keys']
+    assert saved == {'openai': FAKE, 'gemini': 'gem-key-123456'}  # the other providers' keys are not lost
+    assert stat.S_IMODE(backup.stat().st_mode) == 0o600  # and the backup is not left readable by others
+    assert store.get_api_key('anthropic') == 'ant-key-123456'
+    assert store.get_api_key('openai') is None  # the untrusted content is not merged into the new file
+
+
+@posix_only
+def test_deleting_a_key_over_an_untrusted_file_also_keeps_a_backup(store):
+    store.set_api_key('openai', FAKE)
+    os.chmod(store.path, 0o666)
+
+    store.delete_api_key('openai')
+
+    assert FAKE in (store.directory / 'api-keys.corrupt').read_text(encoding='utf-8')
+
+
+@posix_only
+def test_a_directory_that_cannot_be_made_private_is_a_secret_store_error(store, monkeypatch):
+    def refuse(path, mode):
+        raise PermissionError('not ours')
+
+    monkeypatch.setattr(os, 'chmod', refuse)
+
+    with pytest.raises(SecretStoreError):
+        store.set_api_key('openai', FAKE)
+    with pytest.raises(SecretStoreError):
+        store.delete_api_key('openai')

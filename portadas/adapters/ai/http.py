@@ -25,8 +25,11 @@ Rules every provider call follows (docs/security.md):
 
 * the timeout is ``AiConfig.bounded_timeout`` per attempt for connecting and for each wait on the socket, and the whole
   call (every attempt, every backoff and the streaming of the body) must finish within ``TOTAL_BUDGET_FACTOR`` times
-  that timeout: a server that trickles one byte a second cannot keep a request alive. The call also stops early when
-  its job was cancelled (``application/cancellation.py``);
+  that timeout: a server that trickles one byte a second cannot keep a request alive, whether it trickles the headers
+  or the body. A watcher thread per attempt closes the sockets of the attempt when the deadline passes or the job is
+  cancelled, which ends a read that is blocked inside ``requests``; the backoff pause wakes on cancellation too
+  (``application/cancellation.py``). Not covered: DNS resolution, and the connect phase, which only has the per-wait
+  timeout (applied per address);
 * proxy variables and ``.netrc`` are ignored (``trust_env`` is off): a proxy would see the bearer key in clear text and
   ``.netrc`` could replace the ``Authorization`` header. A proxy, if ever wanted, must be an explicit setting;
 * redirects are never followed (a custom header such as ``x-api-key`` would travel to the new host);
@@ -36,13 +39,19 @@ Rules every provider call follows (docs/security.md):
 * errors become ``DesignError`` with a fixed, presentable message. The text of the underlying exception (which can
   carry headers or the URL) is never used, and anything taken from a provider's error body is redacted and shortened.
 """
+import contextlib
 import json
 import logging
 import re
+import socket
+import threading
 import time
 import unicodedata
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3 import HTTPConnectionPool, HTTPSConnectionPool
+from urllib3.connection import HTTPConnection, HTTPSConnection
 
 from ...application import cancellation
 from ...application.ai_config import KEY_PATTERN
@@ -55,6 +64,7 @@ log = logging.getLogger(__name__)
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_RETRIES = 2
 MAX_BACKOFF = 10.0
+WATCH_INTERVAL = 0.05  # how often the watcher looks at the clock and at the cancel flag
 TOTAL_BUDGET_FACTOR = 2  # the whole call may take at most this many times the configured timeout
 CONNECT_TIMEOUT = 10
 MAX_PROVIDER_MESSAGE = 200
@@ -82,7 +92,7 @@ class HttpDesigner(CoverDesigner):
         self.model = model
         self.timeout = timeout
         self.session = session if session is not None else _new_session()
-        self.sleep = sleep if sleep is not None else time.sleep
+        self.sleep = sleep if sleep is not None else cancellation.wait
         self.clock = clock if clock is not None else time.monotonic
         if isinstance(api_key, str):
             register_secret(api_key)  # the exact key is redacted from any text this process logs from now on
@@ -124,25 +134,74 @@ class HttpDesigner(CoverDesigner):
     # --- one call ------------------------------------------------------------------------------------------------
     def _send(self, method, url, headers, body):
         deadline = self.clock() + self.timeout * TOTAL_BUDGET_FACTOR
-        for attempt in range(MAX_RETRIES + 1):
-            response = self._request(method, url, headers, body, deadline)
-            try:
-                status = response.status_code
-                log.debug('%s answered HTTP %s (attempt %d)', self.provider, status, attempt + 1)
-                if status in RETRYABLE and attempt < MAX_RETRIES:
-                    delay = self._backoff(response, attempt)
-                    if delay >= self._remaining(deadline):
-                        raise self._too_slow()  # the pause alone would use up what is left of the budget
-                    response.close()
-                    self.sleep(delay)
-                    continue
-                raw = self._read(response, deadline)
-                if 200 <= status < 300:
-                    return self._load(raw)
-                raise DesignError(self._status_message(status, raw))
-            finally:
-                response.close()
+        try:
+            for attempt in range(MAX_RETRIES + 1):
+                with self._watched(deadline) as watch:
+                    outcome = self._attempt(watch, method, url, headers, body, attempt, deadline)
+                if isinstance(outcome, dict):
+                    return outcome
+                self.sleep(outcome)  # a retry: ``outcome`` is the backoff in seconds
+        finally:
+            close = getattr(self.session, 'close', None)
+            if close is not None:
+                close()  # drops kept-alive connections: the next call connects afresh, so its sockets are watched
         raise DesignError(f'{self.provider} did not answer.')  # pragma: no cover - the loop always returns or raises
+
+    def _attempt(self, watch, method, url, headers, body, attempt, deadline):
+        """One request and the reading of its answer: the parsed JSON, or the backoff before the next attempt."""
+        response = self._request(method, url, headers, body, deadline)
+        watch.response = response
+        try:
+            status = response.status_code
+            log.debug('%s answered HTTP %s (attempt %d)', self.provider, status, attempt + 1)
+            if status in RETRYABLE and attempt < MAX_RETRIES:
+                delay = self._backoff(response, attempt)
+                if delay >= self._remaining(deadline):
+                    raise self._too_slow()  # the pause alone would use up what is left of the budget
+                return delay
+            raw = self._read(response, deadline)
+            if 200 <= status < 300:
+                return self._load(raw)
+            raise DesignError(self._status_message(status, raw))
+        finally:
+            response.close()
+
+    @contextlib.contextmanager
+    def _watched(self, deadline):
+        """
+        Enforce the deadline and cancellation on blocking socket reads: a watcher thread shuts the attempt's sockets
+        down when time is up or the job was cancelled, so ``requests`` fails at once instead of waiting for the next
+        byte. Whatever error that causes is replaced by the right message.
+        """
+        watch = _Watch()
+        done = threading.Event()
+        limit = time.monotonic() + max(0.0, deadline - self.clock())
+        cancel_event = cancellation.current_event()
+
+        def watcher():
+            while not done.wait(WATCH_INTERVAL):
+                if cancel_event is not None and cancel_event.is_set():
+                    watch.stop('cancelled')
+                    return
+                if time.monotonic() >= limit:
+                    watch.stop('deadline')
+                    return
+
+        thread = threading.Thread(target=watcher, name='portadas-http-watch', daemon=True)
+        _tracker.sockets = watch.sockets
+        thread.start()
+        try:
+            yield watch
+        except Exception:
+            if watch.reason == 'cancelled':
+                raise DesignError('The request was cancelled.') from None
+            if watch.reason == 'deadline':
+                raise self._too_slow() from None
+            raise
+        finally:
+            done.set()
+            thread.join()
+            _tracker.sockets = None
 
     def _remaining(self, deadline):
         """Seconds left of the total budget; raises when the job was cancelled or nothing is left."""
@@ -181,12 +240,17 @@ class HttpDesigner(CoverDesigner):
 
     def _read(self, response, deadline):
         chunks, size = [], 0
-        for chunk in response.iter_content(8192):
-            self._remaining(deadline)  # a wall-clock check per chunk: ``requests`` only times each wait on the socket
-            size += len(chunk)
-            if size > MAX_RESPONSE_BYTES:
-                raise DesignError('The answer of the AI provider is too large and was discarded.')
-            chunks.append(chunk)
+        try:
+            for chunk in response.iter_content(8192):
+                self._remaining(deadline)  # also checked per chunk (the watcher covers a read blocked on the socket)
+                size += len(chunk)
+                if size > MAX_RESPONSE_BYTES:
+                    raise DesignError('The answer of the AI provider is too large and was discarded.')
+                chunks.append(chunk)
+        except requests.exceptions.Timeout:
+            raise self._too_slow() from None
+        except (requests.exceptions.RequestException, OSError):
+            raise DesignError(f'The answer of {self.provider} was interrupted.') from None
         return b''.join(chunks)
 
     def _load(self, raw):
@@ -231,9 +295,82 @@ class HttpDesigner(CoverDesigner):
         return redact(' '.join(clean.split()))[:MAX_PROVIDER_MESSAGE]
 
 
+class _Watch:
+    """What the watcher of one attempt can abort: the sockets it opened and the response it is reading."""
+
+    def __init__(self):
+        self.sockets = []
+        self.response = None
+        self.reason = None
+
+    def stop(self, reason):
+        self.reason = reason
+        for sock in list(self.sockets):
+            try:
+                sock.shutdown(socket.SHUT_RDWR)  # wakes a thread blocked in recv; close() alone would not
+            except OSError:
+                pass
+        response = self.response
+        if response is not None:
+            try:
+                response.close()
+            except Exception:  # noqa: BLE001 - best effort from another thread
+                pass
+
+
+_tracker = threading.local()  # the sockets list of the attempt running on this thread, if any
+
+
+def _remember(connection_sock):
+    sockets = getattr(_tracker, 'sockets', None)
+    if sockets is not None and connection_sock is not None:
+        sockets.append(connection_sock)
+
+
+class _TrackedConnection(HTTPConnection):
+    def _new_conn(self):
+        sock = super()._new_conn()
+        _remember(sock)
+        return sock
+
+    def connect(self):
+        super().connect()
+        _remember(self.sock)
+
+
+class _TrackedSecureConnection(HTTPSConnection):
+    def _new_conn(self):
+        sock = super()._new_conn()
+        _remember(sock)  # the raw socket, so a stalled TLS handshake can be aborted too
+        return sock
+
+    def connect(self):
+        super().connect()
+        _remember(self.sock)
+
+
+class _TrackedHttpPool(HTTPConnectionPool):
+    ConnectionCls = _TrackedConnection
+
+
+class _TrackedHttpsPool(HTTPSConnectionPool):
+    ConnectionCls = _TrackedSecureConnection
+
+
+class _TrackingAdapter(HTTPAdapter):
+    """Reports every socket it opens to the watcher of the attempt running on the calling thread."""
+
+    def init_poolmanager(self, *args, **kwargs):
+        super().init_poolmanager(*args, **kwargs)
+        self.poolmanager.pool_classes_by_scheme = {'http': _TrackedHttpPool, 'https': _TrackedHttpsPool}
+
+
 def _new_session():
     session = requests.Session()
     session.trust_env = False  # no HTTP(S)_PROXY, NO_PROXY, REQUESTS_CA_BUNDLE or .netrc from the environment
+    adapter = _TrackingAdapter(max_retries=0)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
     return session
 
 

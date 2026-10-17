@@ -93,7 +93,8 @@ def event_loops_stay_alive(request):
     """
     yield
     if 'qapp' in request.fixturenames and not event_loops_alive():
-        pytest.exit(f'{request.node.nodeid} left the Qt event loops dead (QCoreApplication.exit/quit was called).',
+        pytest.exit(f'Qt event loops are dead after {request.node.nodeid} (QCoreApplication.exit/quit was called). The '
+                    'culprit may be this test or an earlier one whose timer fired during it.',
                     returncode=3)
 
 
