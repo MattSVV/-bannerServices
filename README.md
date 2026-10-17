@@ -36,7 +36,7 @@ From OpenLP, the user fills in the sermon data, picks a template (or asks the AI
 
 ### Configuring AI
 
-Open **Settings > Configure OpenLP > Covers**. Pick a provider, optionally type a model name (the box shows the default), and paste your API key. For a local server such as Ollama choose *OpenAI-compatible server* and enter its address (`https://...`, or `http://localhost:11434/v1`). The key is stored in a private file in your OpenLP data folder, not in OpenLP's settings, so exporting your settings never includes it. The field never shows the key again; it says "saved", and **Clear** followed by **OK** removes it. **Test connection** will be enabled with the AI mode.
+Open **Settings > Configure OpenLP > Covers**. Pick a provider, optionally type a model name (the box shows the default), and paste your API key. For a local server such as Ollama choose *OpenAI-compatible server* and enter its address (`https://...`, or `http://localhost:11434/v1`). The key is stored in a private file in your OpenLP data folder, not in OpenLP's settings, so exporting your settings never includes it. The field never shows the key again; it says "saved", and **Clear** followed by **OK** removes it. **Test connection** asks the provider (in the background) whether the key and model work. Default models were checked against each provider's documentation on 2026-10-17 (OpenAI `gpt-6-luna`, Anthropic `claude-haiku-5-5`, Gemini `gemini-3.5-flash-lite`; the OpenAI-compatible default `llama3.1` is an unverified example, change it to a model your server has). When you ask the AI for a design, the cover text and your style hint are sent to the provider you chose; see `docs/security.md`.
 
 ### Key design decisions
 

@@ -37,6 +37,7 @@ MAX_TITLE = 80
 MAX_SUBTITLE = 240
 MAX_READINGS = 12
 MAX_RAW_READINGS = 30  # raw reading lines accepted by ``from_raw`` before any parsing
+MAX_CUSTOM_TEMPLATE = 150000  # an AI-designed template stored with the cover (sanitised HTML)
 MAX_INLINE_SVG = 140000  # room for an uploaded PNG (96 KB, base64) wrapped in an SVG
 
 _SAFE_ID = re.compile(r'\A[A-Za-z0-9_-]{1,64}\Z')
@@ -133,6 +134,7 @@ class Cover:
     template_id: str = DEFAULT_TEMPLATE_ID
     readings_label: str = DEFAULT_READINGS_LABEL
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    custom_template_html: str = None  # AI design; ``template_id`` then only anchors relative asset URLs
 
     def __post_init__(self):
         if not isinstance(self.id, str) or not _SAFE_ID.match(self.id):
@@ -154,6 +156,10 @@ class Cover:
             raise CoverError('The icon must be an IconRef.')
         if not isinstance(self.created_at, datetime) or self.created_at.tzinfo is None:
             raise CoverError('The creation time needs a timezone.')
+        if self.custom_template_html is not None and (
+                not isinstance(self.custom_template_html, str) or not self.custom_template_html.strip()
+                or len(self.custom_template_html) > MAX_CUSTOM_TEMPLATE):
+            raise CoverError(f'The custom template must be text of at most {MAX_CUSTOM_TEMPLATE} characters.')
 
     @staticmethod
     def _check_text(what, value, limit, required=False, multiline=False):
@@ -169,7 +175,7 @@ class Cover:
     @classmethod
     def from_raw(cls, title_main, *, label=None, readings_label=None, title_accent=None, subtitle=None,
                  key_verse=None, readings=(), icon=DEFAULT_ICON, template_id=DEFAULT_TEMPLATE_ID, id=None,
-                 created_at=None):
+                 created_at=None, custom_template_html=None):
         """
         Build a cover from raw user input: whitespace is normalised, blank optionals become ``None`` and
         references are parsed. Raises ``CoverError`` with a presentable message on any rule violation.
@@ -191,4 +197,5 @@ class Cover:
             key_verse=None if verse is None else _as_reference(verse, 'Key verse'),
             readings=tuple(_as_reference(item, f'Reading {number}') for number, item in lines),
             icon=icon, template_id=template_id,
-            created_at=datetime.now(timezone.utc) if created_at is None else created_at)
+            created_at=datetime.now(timezone.utc) if created_at is None else created_at,
+            custom_template_html=custom_template_html)

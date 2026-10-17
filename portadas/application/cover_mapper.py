@@ -20,12 +20,15 @@
 ##########################################################################
 """Turns a ``Cover`` into JSON-compatible data and back. The domain stays free of any storage format."""
 import json
+import logging
 from datetime import datetime
 
 from ..domain.cover import Cover, IconKind, IconRef
 from ..domain.errors import DomainError
+from ..security.html_policy import sanitize_template
 
 SCHEMA_VERSION = 1
+log = logging.getLogger(__name__)
 
 
 class CoverDataError(DomainError):
@@ -34,7 +37,7 @@ class CoverDataError(DomainError):
 
 def cover_to_dict(cover):
     """Return the plain-data form of ``cover`` (strings, lists and dicts only), tagged with the schema version."""
-    return {
+    data = {
         'schema_version': SCHEMA_VERSION,
         'id': cover.id,
         'template_id': cover.template_id,
@@ -48,6 +51,9 @@ def cover_to_dict(cover):
         'icon': {'kind': cover.icon.kind.value, 'value': cover.icon.value},
         'created_at': cover.created_at.isoformat(),
     }
+    if cover.custom_template_html is not None:  # additive key: schema 1 readers that do not know it ignore it
+        data['custom_template_html'] = cover.custom_template_html
+    return data
 
 
 def cover_to_json(cover):
@@ -76,7 +82,7 @@ def cover_from_dict(data):
             label=_text(data, 'label'), readings_label=_text(data, 'readings_label', required=False),
             title_accent=_text(data, 'title_accent', required=False), subtitle=_text(data, 'subtitle', required=False),
             key_verse=_text(data, 'key_verse', required=False), readings=_readings(data),
-            icon=_icon(data), created_at=_timestamp(data))
+            icon=_icon(data), created_at=_timestamp(data), custom_template_html=_custom_template(data))
     except CoverDataError:
         raise
     except DomainError as error:
@@ -94,6 +100,20 @@ def _text(data, key, required=True):
     if not isinstance(value, str):
         raise CoverDataError(f'The cover field "{key}" must be text.')
     return value
+
+
+def _custom_template(data):
+    """The stored AI template, sanitised again: a hand-edited file never reaches the renderer unchecked."""
+    value = _text(data, 'custom_template_html', required=False)
+    if value is None:
+        return None
+    result = sanitize_template(value)
+    if not result.accepted:
+        # The image of the cover is still valid; only a later re-render falls back to the base template.
+        log.warning('Dropped the stored custom template of cover "%s": it no longer passes the template rules.',
+                    data.get('id'))
+        return None
+    return result.html
 
 
 def _readings(data):

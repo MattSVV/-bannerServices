@@ -101,6 +101,8 @@ field. Templates that do not use these class names get a render but no overflow 
 
 ## UI tests (pytest-qt)
 
+`tests/test_ai_adapters.py` drives the four AI adapters with a scripted `requests` session (`tests/ai_support.py`): request shape, parsing, retries, error mapping and key redaction, with no network. `tests/test_design_prompt.py`, `tests/test_design_parse_and_use_case.py` and `tests/test_custom_template.py` cover the prompt, the reply parser, the repair round and the stored AI template; `tests/test_background.py` the Qt worker.
+
 `tests/test_edit_form.py` (the cover editor) and `tests/test_mediaitem.py` (the library tab) run the real widgets with
 fakes behind the ports (`tests/fakes.py`: an in-memory repository and a renderer the test drives by hand). Message
 boxes and file choosers are overridden in the tests, so nothing opens a modal window. The `openlp_env` fixture in

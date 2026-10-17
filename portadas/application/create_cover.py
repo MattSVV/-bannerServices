@@ -23,7 +23,9 @@ from dataclasses import dataclass
 
 from ..domain.cover import Cover, CoverError, IconKind
 from ..domain.templating import render_cover
-from ..security.html_policy import sanitize_svg
+from ..security.html_policy import sanitize_svg, sanitize_template
+
+CUSTOM_REQUIRED = ('title_main',)  # placeholders every AI template must contain
 
 
 @dataclass(frozen=True)
@@ -58,9 +60,12 @@ class CreateCoverFromTemplate:
         Return ``(html, base_dir)`` ready for a ``CoverRenderer``: the template filled with the cover's text and
         icon. Useful for asynchronous previews. :raises DomainError: for an unknown template or unusable icon.
         """
-        template = self.templates.load(cover.template_id)
-        html = render_cover(template.html, cover, self._icon_svg(cover.icon),
-                            required=template.manifest.required)
+        if cover.custom_template_html is not None:
+            source, required = self._custom_template(cover), CUSTOM_REQUIRED
+        else:
+            template = self.templates.load(cover.template_id)
+            source, required = template.html, template.manifest.required
+        html = render_cover(source, cover, self._icon_svg(cover.icon), required=required)
         return html, self.templates.root / cover.template_id
 
     def preview(self, title_main, **fields):
@@ -80,6 +85,15 @@ class CreateCoverFromTemplate:
         cover, result = self.preview(title_main, **fields)
         self.repository.save(cover, result.png_bytes)
         return CreatedCover(cover, tuple(result.overflow))
+
+    @staticmethod
+    def _custom_template(cover):
+        """The AI template of ``cover``, sanitised again on every render (stored data is never trusted)."""
+        result = sanitize_template(cover.custom_template_html, CUSTOM_REQUIRED)
+        if not result.accepted:
+            reasons = '; '.join(violation.message for violation in result.violations if violation.fatal)
+            raise CoverError(f'The custom template was rejected: {reasons}')
+        return result.html
 
     def _icon_svg(self, icon):
         if icon.kind is IconKind.BUILTIN:

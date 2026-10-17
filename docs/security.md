@@ -92,7 +92,38 @@ request URL (Gemini accepts `?key=`).
 | Malware running as the same user | None: any program that can run the plugin can read what the plugin can read | Accepted. Use provider-side spending limits and revoke leaked keys |
 | Shoulder surfing | Password echo mode, key never shown again | A key can be seen while being typed if the user reveals it with the OS |
 
+### AI provider calls (`portadas/adapters/ai/`, T12)
+
+What leaves the machine: the **cover text** (label, titles, subtitle, key verse, readings), the **style hint** the user
+types, and our fixed design rules. Both texts go to the provider the user chose (OpenAI, Anthropic, Google, or the
+OpenAI-compatible server at the address they set), under that provider's data policy. Nothing else is sent: no other
+covers, no files, no OpenLP data. Without a key nothing is ever sent. The text and the hint are placed in marked blocks
+and the model is told they are data, not instructions (`application/design_prompt.py`); stripping control characters
+and the block delimiters makes it hard to break out, but a prompt cannot be a security boundary, so the real boundary is
+the sanitizer: whatever the model answers is untrusted and passes `sanitize_template` / `sanitize_svg` (never the
+uploaded-PNG option) before it is stored or rendered, and again on every load and render.
+
+| Rule | How |
+|------|-----|
+| The key never appears in a URL | Gemini uses the `x-goog-api-key` header; OpenAI/compatible use `Authorization`, Anthropic `x-api-key` |
+| No key in errors or logs | Adapters build error messages from fixed text plus a shortened, redacted provider message; exception text from `requests` (which can carry URLs or headers) is never used; `register_secret` makes the exact key redactable |
+| No redirects | `allow_redirects=False`: a custom auth header would otherwise travel to the redirect target |
+| Bounded | `AiConfig.bounded_timeout` (5-300 s), at most 2 retries on 429/5xx (1 s, 2 s backoff or `Retry-After`, capped at 10 s), responses refused beyond 2 MB while reading |
+| One repair round | A rejected answer is sent back once with the violations; a second rejection is an error, never a loop |
+| Plain `http://` | Only to `localhost`/`127.0.0.1` (OpenAI-compatible), enforced by `validate_base_url` |
+| Off the GUI thread | `lib/background.py` runs the blocking call on a `QThreadPool` and delivers the result on the GUI thread; a closed dialog cancels the job (the HTTP call ends by its timeout) |
+
+An AI template is stored with the cover as `custom_template_html` in its JSON (additive key, schema 1). It is
+re-sanitised when the file is read (a stored template that no longer passes is dropped and the cover still loads,
+falling back to its `template_id`) and again in `CreateCoverFromTemplate.compose`. There is no path involved, so there is
+no traversal surface: relative URLs resolve from the built-in folder named by `template_id` (`base_dir`), which is the
+same allowlisted root the renderer's request filter already enforces.
+
 ### Residual risks (accepted)
+
+- The model can ignore the style hint or produce an ugly design that passes every check. The preview is the check.
+- A provider can bill for a request whose answer we then reject. The single repair round caps this at two calls per
+  design; use provider-side spending limits.
 
 - Rendering cost within the limits (many nested filters, patterns or `<use>` references) can slow a render; the renderer
   has a timeout, and the user sees the failure instead of a hang.

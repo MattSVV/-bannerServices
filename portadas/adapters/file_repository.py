@@ -51,7 +51,7 @@ from ..domain.cover import Cover
 
 log = logging.getLogger(__name__)
 
-MAX_JSON_BYTES = 256 * 1024
+MAX_JSON_BYTES = 512 * 1024  # a cover may carry an AI template (up to 150 KB) and an inline icon (up to 140 KB)
 MAX_PNG_BYTES = 50 * 1024 * 1024
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 

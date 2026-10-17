@@ -77,6 +77,16 @@ Text-bearing properties are **fatal** (`css-content-text`) when they could draw 
 template, so neither `<ul>`, a bare `<li>` nor `display: list-item` draws a bullet or number. Write
 `list-style: none` on your own lists if you like; nothing else is accepted.
 
+## AI templates (T12)
+
+`application/design_prompt.py` builds the system prompt **from the constants of the sanitizer** (`css_policy.PROPERTIES`,
+`FUNCTIONS`, `FONT_FAMILIES`, `html_policy.HTML_TAGS`, `SVG_TAGS`, `SAFE_ATTRIBUTES`, the placeholder lists in
+`domain/templating.py`), so extending an allowlist updates the prompt. The model answers with one JSON object
+`{"html": ..., "icon_svg": ..., "notes": ...}`; `DesignCoverWithAI` sanitises it (one repair round on rejection) and
+`DesignedCover.apply_to(cover)` sets `Cover.custom_template_html` (and the icon when the AI drew a usable one). A cover
+with a custom template renders that HTML instead of `template_id`'s file; `template_id` stays set because it names the
+folder that relative `../../assets/...` URLs resolve from.
+
 Practical advice for AI prompts (T12): write plain, static CSS with the properties above; use `{{placeholders}}` only in
 element text; put decoration in `::before`/`::after` with `content: ""` and a background, or in inline SVG; do not use
 `@import`, animations, `font:`, `list-style`, `local()` fonts or any text in CSS.

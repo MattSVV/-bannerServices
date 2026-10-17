@@ -19,6 +19,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>. #
 ##########################################################################
 """The AI settings tab: load/save of non-secret values, the masked API key and the injected connection test."""
+import threading
+
 import pytest
 from contrib.plugins.portadas.application.ai_config import DEFAULT_MODELS, DEFAULT_TIMEOUT, AiConfig
 from contrib.plugins.portadas.application.ports import SecretStore, SecretStoreError
@@ -244,15 +246,49 @@ def test_a_corrupt_stored_provider_falls_back_to_the_default(make_tab, openlp_en
     assert config.provider == 'openai' and config.timeout == DEFAULT_TIMEOUT
 
 
-def test_test_connection_says_not_available_by_default(make_tab):
-    tab = make_tab()
+def wait_for_result(qtbot, tab, text='Testing...'):
+    qtbot.waitUntil(lambda: tab.test_button.isEnabled() and tab.test_result_label.text() != text, timeout=5000)
+
+
+def test_test_connection_uses_the_real_adapter_by_default(make_tab, qtbot):
+    tab = make_tab()  # no key stored: the adapter answers without any network call
+
+    tab.test_button.click()
+    wait_for_result(qtbot, tab)
+
+    assert 'No API key' in tab.test_result_label.text()
+
+
+def test_the_button_is_disabled_and_a_hint_shown_while_the_test_runs(make_tab, qtbot):
+    release = threading.Event()
+
+    def slow(config, api_key):
+        release.wait(5)
+        return 'Connected.'
+
+    tab = make_tab(test_connection=slow)
 
     tab.test_button.click()
 
-    assert 'Not available yet' in tab.test_result_label.text()
+    assert not tab.test_button.isEnabled() and tab.test_result_label.text() == 'Testing...'
+    release.set()
+    wait_for_result(qtbot, tab)
+    assert tab.test_result_label.text() == 'Connected.'
 
 
-def test_test_connection_calls_the_injected_callable_with_the_typed_key(make_tab):
+def test_reloading_the_tab_drops_a_test_in_flight(make_tab, qtbot):
+    release = threading.Event()
+    tab = make_tab(test_connection=lambda config, api_key: release.wait(5) and 'late')
+
+    tab.test_button.click()
+    tab.load()
+    release.set()
+    qtbot.wait(150)
+
+    assert tab.test_button.isEnabled() and tab.test_result_label.text() == ''
+
+
+def test_test_connection_calls_the_injected_callable_with_the_typed_key(make_tab, qtbot):
     calls = []
 
     def probe(config, api_key):
@@ -262,21 +298,24 @@ def test_test_connection_calls_the_injected_callable_with_the_typed_key(make_tab
     tab = make_tab(MemoryStore({'openai': FAKE}), test_connection=probe)
     tab.model_edit.setText('m1')
     tab.test_button.click()
+    wait_for_result(qtbot, tab)
     tab.api_key_edit.setText(NEW)
     tab.test_button.click()
+    wait_for_result(qtbot, tab)
 
     assert [call[0].model for call in calls] == ['m1', 'm1']
     assert [call[1] for call in calls] == [FAKE, NEW]  # the stored key, then the one being typed
     assert tab.test_result_label.text() == 'Connected.'
 
 
-def test_test_connection_errors_are_shown_redacted(make_tab):
+def test_test_connection_errors_are_shown_redacted(make_tab, qtbot):
     def probe(config, api_key):
         raise RuntimeError(f'401 for key {api_key}')
 
     tab = make_tab(MemoryStore({'openai': FAKE}), test_connection=probe)
 
     tab.test_button.click()
+    wait_for_result(qtbot, tab)
 
     assert FAKE not in tab.test_result_label.text()
     assert '401' in tab.test_result_label.text()

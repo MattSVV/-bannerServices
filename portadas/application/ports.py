@@ -165,3 +165,46 @@ class SecretStore(ABC):
     @abstractmethod
     def delete_api_key(self, provider):
         """Forget the key of ``provider``. Deleting a key that is not there is not an error."""
+
+
+class DesignError(Exception):
+    """
+    The AI design step failed (bad key, quota, timeout, unusable reply...). The message is presentable to the user
+    and never contains an API key, a request header or the request body.
+    """
+
+
+class UnusableReply(DesignError):
+    """The provider answered, but not with a usable design (not JSON, no template...). Worth one repair round."""
+
+
+@dataclass(frozen=True)
+class DesignRequest:
+    """What a ``CoverDesigner`` is asked: a system prompt (the rules) and a user prompt (style hint and cover text)."""
+    system_prompt: str
+    user_prompt: str
+
+
+@dataclass(frozen=True)
+class DesignProposal:
+    """The raw answer of a designer: untrusted HTML (a template with placeholders), an optional icon, a short note."""
+    template_html: str
+    icon_svg: str = None
+    notes: str = ''
+
+
+class CoverDesigner(ABC):
+    """Asks an AI to design a cover template. Implementations talk to one provider and block until it answers."""
+
+    @abstractmethod
+    def design(self, request):
+        """
+        Send ``request`` and return the parsed ``DesignProposal``. The proposal is **untrusted**: callers must
+        sanitise it before use. Blocks, so call it from a worker thread.
+
+        :raises DesignError: for every failure, with a message that is safe to show.
+        """
+
+    def test_connection(self):
+        """Check the key and model cheaply and return a message to show. :raises DesignError: when it fails."""
+        raise DesignError('This provider cannot be tested.')

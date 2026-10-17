@@ -25,11 +25,17 @@ from urllib.parse import urlsplit
 PROVIDERS = ('openai', 'anthropic', 'gemini', 'openai_compatible')
 COMPATIBLE = 'openai_compatible'
 
-# Starting points only: the model field is free text and the user can change it. T12 may revise these.
+# Starting points only: the model field is free text and the user can change it. Verified 2026-10-17 against:
+#   anthropic  https://platform.claude.com/docs/en/about-claude/models/overview  (Haiku 5.5: fastest, from $0.10/$0.50
+#              per MTok; same family as claude-sonnet-5-5 and claude-opus-5-5)
+#   openai     https://developers.openai.com/api/docs/models and .../models/gpt-6-luna  (most efficient model; the model
+#              page lists Chat Completions among its endpoints)
+#   gemini     https://ai.google.dev/gemini-api/docs/models  (Flash-Lite: fastest, most cost-effective stable 3.5 model)
+#   openai_compatible: NOT verified. Models differ per server; "llama3.1" is the usual Ollama example. Editable.
 DEFAULT_MODELS = {
-    'openai': 'gpt-4.1-mini',
-    'anthropic': 'claude-sonnet-4-5',
-    'gemini': 'gemini-2.5-flash',
+    'openai': 'gpt-6-luna',
+    'anthropic': 'claude-haiku-5-5',
+    'gemini': 'gemini-3.5-flash-lite',
     'openai_compatible': 'llama3.1',
 }
 

@@ -30,6 +30,7 @@ from openlp.core.common.i18n import translate
 from openlp.core.lib.settingstab import SettingsTab
 from PyQt5 import QtCore, QtWidgets
 
+from ..adapters.ai import test_connection as ai_test_connection
 from ..application.ai_config import (
     COMPATIBLE,
     DEFAULT_MODELS,
@@ -39,9 +40,10 @@ from ..application.ai_config import (
     AiConfig,
     validate_base_url,
 )
-from ..application.ports import SecretStoreError
+from ..application.ports import DesignError, SecretStoreError
 from ..security.redaction import redact
 from .ai_settings import default_secret_store, load_ai_config, save_ai_config
+from .background import run_in_background
 
 log = logging.getLogger(__name__)
 
@@ -61,13 +63,15 @@ class PortadasSettingsTab(SettingsTab):
     """
     :param secret_store: a ``SecretStore``; defaults to the per-user file store.
     :param test_connection: ``callable(config, api_key) -> str`` run by the Test connection button. It returns a
-        message to show or raises. ``api_key`` is the key being typed, else the stored one, else ``None``. Called on
-        the GUI thread, so it must be quick. The default says the feature is not available yet.
+        message to show or raises. ``api_key`` is the key being typed, else the stored one, else ``None``. It runs on
+        a worker thread (``lib/background.py``), so it may block up to the request timeout. The default asks the
+        configured provider (``adapters.ai.test_connection``).
     """
 
     def __init__(self, parent, title, visible_title=None, icon_path=None, secret_store=None, test_connection=None):
         self._secret_store = secret_store
-        self.test_connection = test_connection or self._not_available
+        self.test_connection = test_connection or ai_test_connection
+        self._test_job = None
         self._key_saved = {}  # provider -> a key is stored
         self._pending_clear = set()  # providers whose key is deleted when the user presses OK
         super().__init__(parent, title, visible_title, icon_path)
@@ -77,10 +81,6 @@ class PortadasSettingsTab(SettingsTab):
         if self._secret_store is None:
             self._secret_store = default_secret_store()
         return self._secret_store
-
-    @staticmethod
-    def _not_available(config, api_key):
-        return translate('PortadasPlugin.SettingsTab', 'Not available yet.')
 
     # --- construction
     def setup_ui(self):
@@ -220,6 +220,7 @@ class PortadasSettingsTab(SettingsTab):
         self.timeout_spin.setValue(config.timeout)
         self.background_check.setChecked(config.background_images)
         self.api_key_edit.clear()
+        self._cancel_test()
         self.test_result_label.clear()
         self._pending_clear.clear()
         self._key_saved = {provider: bool(self._stored_key(provider)) for provider in PROVIDERS}
@@ -275,9 +276,36 @@ class PortadasSettingsTab(SettingsTab):
     def on_test_connection(self):
         provider = self.selected_provider()
         api_key = self.api_key_edit.text().strip() or self._stored_key(provider)
+        config, probe = self.current_config(), self.test_connection
+        self._cancel_test()
+        self.test_button.setEnabled(False)
+        self.test_result_label.setText(translate('PortadasPlugin.SettingsTab', 'Testing...'))
+        self._test_job = run_in_background(lambda: self._probe(probe, config, api_key), self._test_done,
+                                           self._test_failed)
+
+    @staticmethod
+    def _probe(probe, config, api_key):
+        """Runs on the worker thread. Any failure is shown to the user, so it becomes a presentable message."""
         try:
-            message = str(self.test_connection(self.current_config(), api_key))
+            return str(probe(config, api_key))
+        except DesignError:
+            raise
         except Exception as error:  # a provider error must be shown, never crash the settings dialog
             log.warning('The connection test failed (%s).', type(error).__name__)
-            message = str(error) or type(error).__name__
+            raise DesignError(redact(str(error)) or type(error).__name__) from None
+
+    def _test_done(self, message):
+        self._test_job = None
+        self.test_button.setEnabled(True)
         self.test_result_label.setText(redact(message))
+
+    def _test_failed(self, message):
+        self._test_job = None
+        self.test_button.setEnabled(True)
+        self.test_result_label.setText(redact(message))
+
+    def _cancel_test(self):
+        if self._test_job is not None:
+            self._test_job.cancel()
+            self._test_job = None
+        self.test_button.setEnabled(True)
