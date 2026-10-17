@@ -86,8 +86,9 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T10
 - [x] T06c (low-severity sanitizer residuals)
 - [x] T11
-- [ ] T09b (editor defects from verification)
-- [ ] T12
+- [x] T09b (editor defects from verification)
+- [ ] T20 (intermittent test-suite hang, found by orchestrator)
+- [x] T12
 - [ ] T13
 - [ ] T14
 - [ ] T15
@@ -128,6 +129,9 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 | T10 | done | `aeae46b` | RED 18 failed with a stub, then GREEN 934. Image service items; reopening a service after the cover is deleted is tested. Runtime: `scripts/run-headless.sh` exit 0, `Portadas library loaded: 2 cover(s)`, 0 Portadas errors. Orchestrator spot check: 934 passed. GUI add-to-service/live is N/A headless; covered by the manual checklist in `docs/testing.md`. Independent verifier: upload and service paths held; **re-entrant Save duplicates covers, unsanitised picker SVG can hang, form leak, unbounded PNG decode** → T09b. |
 | T06c | done | `78996f6` | RED 17/29, then GREEN. `-webkit-line-clamp` dropped; `U+` unicode-range tokenized and refused; attribute values reject bare `(`/`:`. |
 | T11 | done | `8c0b962` | RED: ModuleNotFoundError ×4, then GREEN 1059. Secrets in `portadas/secrets/api-keys` (dir 0700, file 0600, atomic, DPAPI on Windows, mocked test), never in QSettings; log redaction filter; settings tab. Runtime: `Portadas settings tab created`, 0 errors. Orchestrator spot check: 1059 passed. Default model ids unverified → T12. |
+| T09b | done | `66fa62e` | RED 13/14, then GREEN 1074. Save re-entrancy guard and stable id, icon sanitized before QtSvg, form deleteLater, PNG pixel cap before decode, PNG chunk/CRC/IEND check, `\A...\Z` id patterns. |
+| T12 | done | `9a21107` | Weak RED (import errors), then GREEN 1241, 97.2%. Port `CoverDesigner`, `DesignCoverWithAI` (one repair round), adapters for OpenAI, Anthropic, Gemini (key in header) and OpenAI-compatible; redirects refused; retries bounded; async test connection. Defaults the writer checked against provider docs on 2026-10-17: `claude-haiku-5-5`, `gpt-6-luna`, `gemini-3.5-flash-lite` (OpenAI JSON mode unconfirmed). No live provider test (no keys). Headless OK. |
+| T20 | open | | The orchestrator's spot check of `scripts/check.sh` hung for more than 6 minutes with pytest spinning on CPU; an immediate rerun passed in 24 s. The T06b verifier saw a similar stall. Capturing the stack with `faulthandler_timeout`. |
 
 ## Accepted changes
 
@@ -138,6 +142,7 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - Repository: `png_path(id)` instead of a thumbnail cache. Uploaded icons are not supported yet (gap for T09).
 - Overflow detection relies on field CSS class names (`docs/templates.md`), so AI templates must use them.
 - `MAX_INLINE_SVG` raised to 140,000 characters for embedded PNG icons. Template thumbnails load lazily, and saving blocks for about 0.5 s (possible follow-up).
+- AI templates are stored as `Cover.custom_template_html` (additive JSON key, schema 1, re-sanitized on load and on compose). `MAX_JSON_BYTES` is 512 KB. A bad AI icon is dropped after its repair round instead of failing the design.
 - Cross-chapter ranges (`Juan 3:16-4:2`) are rejected for now. This is a possible follow-up.
 
 ## Findings carried forward
@@ -149,4 +154,4 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 
 ## Next step
 
-T09b (editor fixes) then T12 (AI port + provider adapters) by one writer. Then T13/T14.
+T20 (find and fix the intermittent hang, add a per-test timeout to the gate). Then T13/T14, plus an independent verifier for T12.
