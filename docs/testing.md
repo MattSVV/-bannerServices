@@ -184,7 +184,8 @@ a visible window shows: dialogs, drag and drop, preview and live output.
 - [ ] **AI design.** With a provider and key configured (*Settings > Configure OpenLP > Covers*), type a hint and
   click *Design with AI*: the button greys out and *Cancel design* appears; the preview then redraws with a new look and
   the same text. Click *Cancel design* during a second request: it stops and the previous design stays. With no key,
-  the status line says so and nothing is sent. Pick a built-in template: the AI design is dropped.
+  the status line says so and nothing is sent. Save a key for one server, change the address to another and click
+  *Design with AI* or *Test connection*: both stop with a message naming the new host and asking for the key again. Pick a built-in template: the AI design is dropped.
 - [ ] **Save.** *Save* closes the dialog; the cover is in the list with a thumbnail, newest first.
 - [ ] **Edit.** Select it, click *Edit* (or the context menu). The fields are filled in; change the title, *Save*:
   the list shows the new title and thumbnail, and there is still only one entry.

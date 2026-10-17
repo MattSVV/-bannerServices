@@ -87,10 +87,12 @@ that the key never appears in OpenLP's settings or their export, in logs, in the
   logs and error messages.
 - **Key bound to its server (SEC-003).** The key of an OpenAI-compatible server is stored together with the normalized
   origin it was entered for (`scheme://host[:port]`, in the secrets file as `origins`). It is sent only while the
-  configured address has that same origin; otherwise *Test connection* refuses and asks for the key again, the editor sends the request **without** a key
-  (a server that needs none, such as a local Ollama, keeps working; one that needs a key answers with its own error until
-  the key is entered again; the log tells "entered for another server" from "saved before server binding"), and the
-  settings tab shows the host the key goes to. This closes the route where an imported `OpenLP.conf` changes
+  configured address has that same origin; otherwise both *Test connection* and the editor's AI design are **blocked** (T15e, owner decision 2026-10-17): nothing is
+  sent, neither with the key nor without it, and a plain-text message names the host now configured and asks the user to
+  enter the API key again in *Settings > Configure OpenLP > Covers*. There are two messages: "entered for another server"
+  and "saved before keys were tied to a server". Saving the key again records the new origin and unblocks. Only a
+  *stored* key that does not match blocks: with no key stored for the OpenAI-compatible provider (a local Ollama), requests
+  go out without a key as before. The settings tab also shows the host the key goes to. This closes the route where an imported `OpenLP.conf` changes
   `portadas/ai base url` and the stored key follows it to the attacker. **Migration:** a key saved by an earlier build
   has no origin and is treated as unverified: it is not sent until the user types it again (once) in the settings tab.
 
@@ -149,6 +151,15 @@ falling back to its `template_id`) and again in `CreateCoverFromTemplate.compose
 no traversal surface: relative URLs resolve from the built-in folder named by `template_id` (`base_dir`), which is the
 same allowlisted root the renderer's request filter already enforces.
 
+### T15e: a mismatched key blocks (owner decision)
+
+T15d finding 6 made a key bound to another server (or saved before binding) be dropped and the request go out keyless.
+The owner reverted that on 2026-10-17: the user must notice. Now `make_designer` raises a `DesignError` and *Test
+connection* shows the same text, naming the configured host only (no scheme, path or the other server) and the way out
+(enter the API key again in Settings). The two cases have separate messages and Spanish entries. A keyless local server
+is unaffected when no key is stored for the OpenAI-compatible provider; to use one after a key was stored for another
+server, clear the key (**Clear**, then **OK**) or enter any key again.
+
 ### T15d: second verification (LOW and INFO)
 
 | Finding | Fix |
@@ -157,7 +168,7 @@ same allowlisted root the renderer's request filter already enforces.
 | Repair prompt unbounded in problem count | At most 10 problems and 3,000 characters listed, the rest only counted |
 | Stale "Designing..." status after cancel by template pick | The status is cleared when the job is stopped |
 | 16-bit PNG decode peaked above the documented ~100 MB | The bound is in decoded bytes (4 per pixel, 8 at 16 bits per channel; limit 100,000,000), read from the IHDR |
-| Stale key blocked a keyless server | The key is dropped, not sent, and the request goes out keyless |
+| Stale key blocked a keyless server | The key was dropped and the request went out keyless (reverted by T15e: a stored but mismatched key now blocks, see below) |
 
 Residuals from that verification, accepted and documented (`odd/findings/t15d-findings.md`): the stored-icon policy
 checks only the PNG signature of a data URI (Qt and libpng refuse the hostile cases safely; a `png_size` check there
@@ -239,8 +250,8 @@ nothing and asks again next time.
 
 OpenLP's *Import settings* writes whatever a `.conf` file contains into the settings store, including
 `portadas/ai base url`. Before SEC-003 an imported file could therefore point the saved key at another server. The key
-is now tied to the origin it was entered for, so an imported address makes the key unusable (the user is asked to
-enter it again) instead of sending it. This protects the key, not the *text*: with a key typed again, or with a provider
+is now tied to the origin it was entered for, so an imported address blocks the design and *Test connection* until the
+user enters the key again (T15e); nothing is sent, not even a keyless request. This protects the key, not the *text*: with a key typed again, or with a provider
 that needs no key, the cover text goes to whatever address is configured. Check the address in the Covers settings after
 importing a configuration from someone else.
 

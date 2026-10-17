@@ -56,6 +56,7 @@ One row per backlog task: how the factory executed it and what it cost. It is up
 | T15c | delegated | 1 | 0 | check.sh pass, 1432 tests, 97.50% | 264+/9- code, 60+/2- docs | `24f4701`, `6e1420f` | Plain text boxes/tooltips, `has_search` off, first-use notice, security docs. Nothing filed upstream |
 | T15 verify | delegated adversarial verifier | 1 | n/a | CLEAR: 0 critical/high/medium; 2 low, 8 info | 0 | n/a | Gate 1432 passed in a detached worktree; every original T15 repro closed. Findings in `odd/findings/t15d-findings.md`; opened T15d |
 | T15d | delegated | 1 | 0 | check.sh pass, 1445 tests, 97.45%; the first gate run died with a segfault in QtWebEngine; two reruns passed | 401+/45- | `dc3d588` | RED: import errors for the new symbols, 5 failing `test_key_origin` tests, and the status-label test failed on the old code. Notice bound to destination in a private file; repair prompt capped; PNG decode weighted by bit depth; stale key dropped instead of blocking. Residuals (data URI IHDR, `localize` cost, two-read key, surrogate echo, Windows ADS) documented, not fixed |
+| T15e | delegated | 1 | 0 | check.sh pass, 1449 tests, 97.45% | 116+/34- | `0a8faf8` | Owner decision (2026-10-17) reverting T15d item 5. RED: 8 of 26 `test_key_origin` tests failed (`DID NOT RAISE DesignError`, old wording in Test connection). A stored key bound to another server, or saved before binding, now blocks the design and Test connection with a plain-text message naming the configured host and asking for the key again; no stored key still goes keyless |
 | T19 | inline | 0 | 0 | check.sh pass | docs only | see git log | This table, the summary below, README "Status" and the feature document |
 
 ## What the overnight run measured
@@ -64,7 +65,7 @@ Window: first commit 2026-10-16 23:13, last code commit 2026-10-17 11:03 (about 
 
 | Measure | Value |
 |---------|-------|
-| Backlog tasks | 20 (T01-T20) plus 11 follow-up units opened by checks: T06b, T06c, T07b, T09b, T12b, T12c, T13b, T15a, T15b, T15c, T15d (T20 is an extra task found by the orchestrator) |
+| Backlog tasks | 20 (T01-T20) plus 12 follow-up units opened by checks or the owner: T06b, T06c, T07b, T09b, T12b, T12c, T13b, T15a, T15b, T15c, T15d, T15e (T20 is an extra task found by the orchestrator) |
 | Done / blocked | All done; T14 (AI background images) dropped by owner decision on 2026-10-17 |
 | Commits on the feature branch | 53 (14 `fix`, 12 `feat`, 21 `docs`, plus `test`, `ci`, `chore`, `build`) |
 | Tests | 3 (T02/T03) to 1445 at the last gate; about 1,440 added |
