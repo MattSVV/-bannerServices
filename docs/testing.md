@@ -14,6 +14,25 @@ covered by integration tests); the minimum is `COVERAGE_MIN`
 The venv needs the dev-only tools `pytest-cov`, `pytest-timeout` and `ruff`
 (`../openlp/.venv/bin/pip install pytest-cov pytest-timeout ruff`). They are not plugin runtime dependencies.
 
+### Continuous integration
+
+`.github/workflows/ci.yml` (GitHub Actions, Ubuntu 24.04, actions pinned to exact tags) installs the Qt/QtWebEngine
+runtime libraries and Xvfb, clones OpenLP 3.1.8 from source next to the checkout (`../openlp`, where `scripts/check.sh`
+looks for it), installs it with its `test` extras plus `pytest-cov`, `pytest-timeout`, `ruff` and `websocket-client`,
+then runs `scripts/check.sh` and `scripts/run-headless.sh` under `xvfb-run`. `PORTADAS_REQUIRE_RENDER=1` makes a renderer
+that cannot start fail the build instead of skipping pixel tests.
+
+**Status: never executed.** This repository has no remote yet, so the workflow has not run anywhere. It was checked only
+as YAML (`python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"`). Expect to adjust apt package
+names or OpenLP's optional dependencies on the first real run. Action tags are pinned but not by commit SHA; pin SHAs
+once a remote exists.
+
+### Coverage
+
+The gate measures branch coverage on the pure layers (about 97%). The adapters are exercised by integration tests and
+are not part of the gate; their weakest spots are the QtWebEngine renderer's defensive timeouts and the secret store's
+OS error paths, which need a failing file system or a stalled web view to reach.
+
 ### Hang guards
 
 - `pyproject.toml` sets `timeout = 60` and `timeout_method = "thread"` (pytest-timeout): a test that runs longer than
@@ -64,6 +83,13 @@ case and the real renderer; the second uses an uploaded PNG icon, and the script
 (sampled red pixels). The harness then requires the log line `Portadas library loaded: 2 cover(s)` and one thumbnail
 per cover. Adding to the service needs a visible main window, so it is covered by unit tests
 (`tests/test_service_integration.py`) and by the manual checklist below, not by the headless run.
+
+After the library check the harness also runs `scripts/e2e_flow.py` against a second throwaway data dir: for every
+built-in template it creates a cover with the production adapters (real QtWebEngine renderer, file repository),
+checks the PNG is 1920x1080, lists it in the real library tab, builds the image service item the tab hands to the
+service manager and serialises it as the service file would (`ServiceItem.get_service_repr`). It fails on any error
+box or Portadas log record at ERROR or above. `tests/test_e2e_script.py` runs the same script inside the pytest gate.
+A visible main window is still needed to drop a cover onto the real service manager, so that step stays manual.
 
 Other notes:
 
@@ -136,9 +162,15 @@ Things worth knowing:
 ## Manual GUI checklist (library tab and editor)
 
 Run OpenLP with the plugin installed (`scripts/dev-install.sh`) and tick each line. Each step says what you should see.
+Run it before a release and after any change to the editor, the library tab or the AI mode. The headless run
+(`scripts/run-headless.sh`) already proves load, render, library and service-item building; this list covers what only
+a visible window shows: dialogs, drag and drop, preview and live output.
 
 - [ ] **Open the tab.** Enable the plugin in *Settings > Plugins* (restart if asked). A **Covers** tab appears in the
   media manager. Empty at first.
+- [ ] **Settings tab.** *Settings > Configure OpenLP > Covers* opens. Pick a provider, paste a key, press *OK*; reopen:
+  the field says "saved" and never shows the key. *Test connection* answers in the background without freezing the
+  window. *Clear* then *OK* removes the key. Check the OpenLP log (`-l debug`) never contains the key.
 - [ ] **Create.** Click *New*. Type a main title ("Resistir"), an accent title, a subtitle, a key verse ("Santiago 4:7")
   and two readings, one per line. After about half a second the preview on the right shows the cover. *Save* is
   greyed out while it renders.
@@ -168,4 +200,6 @@ Run OpenLP with the plugin installed (`scripts/dev-install.sh`) and tick each li
   its title and gains a second slide.
 - [ ] **Service file.** Save the service (`.osz`), delete the cover from the library, then close and re-open the
   service: the item is still there and its slide shows the cover.
+- [ ] **Restart.** Close and reopen OpenLP: the covers, thumbnails and the AI template of an AI-designed cover are
+  still there, and the log has no `portadas` error line.
 - [ ] **Delete.** Select a cover, *Delete*, answer *No*: nothing happens. Answer *Yes*: it disappears.

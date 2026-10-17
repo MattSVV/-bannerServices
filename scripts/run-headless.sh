@@ -5,6 +5,7 @@
 # Env overrides:
 #   OPENLP_SRC   OpenLP checkout (default ../openlp)
 #   LOG_COPY     if set, copy the full OpenLP log to this path
+#   E2E_TIMEOUT  hard limit in seconds for the end-to-end cover flow (default 300)
 #   SECONDS_RUN  max seconds to wait for the plugin to initialise (default 120)
 set -euo pipefail
 
@@ -27,6 +28,13 @@ OPENLP_DATA_DIR="$XDG_DATA_HOME/openlp" "$repo/scripts/dev-install.sh"
 # list. The second one has an uploaded PNG icon and the script checks it shows up in the rendered image.
 echo "--- seeding covers ---"
 "$openlp_src/.venv/bin/python" "$repo/scripts/seed_cover.py" "$XDG_DATA_HOME/openlp"
+
+# End-to-end cover flow with the production adapters, in its own data dir so the library count above stays at 2:
+# every built-in template -> cover -> render -> library tab -> service item. It fails on any Portadas error record.
+echo "--- end-to-end cover flow ---"
+e2e_data="$profile/e2e-data"
+OPENLP_DATA_DIR="$e2e_data" "$repo/scripts/dev-install.sh"
+timeout --kill-after=10 "${E2E_TIMEOUT:-300}" "$openlp_src/.venv/bin/python" "$repo/scripts/e2e_flow.py" "$e2e_data"
 
 # A fresh profile creates every plugin database on first start, which can take a minute on a slow disk.
 # Run OpenLP in the background and stop it as soon as the plugin is initialised (or the timeout expires).
@@ -60,4 +68,4 @@ grep -qE 'Portadas settings tab created' "$log" || { echo "the settings tab was 
 grep -qE 'Portadas library loaded: 2 cover\(s\)' "$log" || { echo "the library tab did not list the 2 seeded covers" >&2; exit 1; }
 thumbnails="$(find "$XDG_DATA_HOME/openlp/portadas/thumbnails" -name '*.png' 2>/dev/null | wc -l)"
 [ "$thumbnails" -eq 2 ] || { echo "expected 2 thumbnails, found $thumbnails" >&2; exit 1; }
-echo "OK: Portadas plugin loaded and initialised; library listed 2 covers with $thumbnails thumbnails"
+echo "OK: Portadas plugin loaded and initialised; library listed 2 covers with $thumbnails thumbnails; end-to-end flow passed"
