@@ -72,7 +72,7 @@ def icon_from_png_bytes(data):
         raise CoverError('The file is not a PNG image.')
     if len(data) > MAX_PNG_ICON_BYTES:
         raise CoverError(f'The PNG image is too large (at most {MAX_PNG_ICON_BYTES // 1024} KB).')
-    width, height = _png_size(data)
+    width, height = png_size(data)
     if not 0 < width <= MAX_PNG_DIMENSION or not 0 < height <= MAX_PNG_DIMENSION:
         raise CoverError(f'The PNG image has unsupported dimensions (at most {MAX_PNG_DIMENSION} pixels per side).')
     uri = 'data:image/png;base64,' + base64.b64encode(data).decode('ascii')
@@ -84,7 +84,7 @@ def icon_from_png_bytes(data):
     return IconRef(IconKind.INLINE_SVG, result.html)
 
 
-def _png_size(data):
+def png_size(data):
     """
     Walk the chunks of ``data`` and return ``(width, height)``. The file must start with a well-formed ``IHDR`` and
     end exactly after a valid ``IEND``: a truncated PNG, trailing bytes or a bad checksum is rejected.

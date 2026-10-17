@@ -18,11 +18,14 @@
 # You should have received a copy of the GNU General Public License      #
 # along with this program.  If not, see <https://www.gnu.org/licenses/>. #
 """Qt helpers for icons: preparing an uploaded PNG and drawing SVG icons as pixmaps."""
+import os
+import stat
+
 from PyQt5 import QtCore, QtGui, QtSvg
 
-from ..application.icon_upload import MAX_PNG_DIMENSION
+from ..application.icon_upload import MAX_PNG_DIMENSION, png_size
 from ..domain.cover import CoverError
-from ..security.html_policy import MAX_PNG_ICON_BYTES, sanitize_svg
+from ..security.html_policy import MAX_PNG_ICON_BYTES, PNG_SIGNATURE, sanitize_svg
 
 MAX_PNG_FILE_BYTES = 20 * 1024 * 1024  # an uploaded file is read only up to this size
 MAX_DECODE_PIXELS = 25_000_000  # an image announcing more pixels is refused before it is decoded (~100 MB as RGBA)
@@ -30,23 +33,49 @@ ICON_SIDES = (256, 192, 128, 96, 64)  # an uploaded PNG is scaled down until it 
 PICKER_SIZE = 64
 
 
+def read_regular_file(path, limit):
+    """
+    Read at most ``limit`` bytes of the regular file at ``path``.
+
+    The file is opened without blocking and must be a regular file: opening a FIFO would otherwise wait for a writer
+    forever, and a device or socket is never an icon.
+
+    :raises CoverError: when the file cannot be read or is not a regular file.
+    """
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0))
+    except OSError as error:
+        raise CoverError(f'The file could not be read: {error.strerror or "I/O error"}.') from error
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise CoverError('The icon must be a regular file.')
+        with os.fdopen(descriptor, 'rb', closefd=False) as handle:
+            return handle.read(limit)
+    except OSError as error:
+        raise CoverError(f'The file could not be read: {error.strerror or "I/O error"}.') from error
+    finally:
+        os.close(descriptor)
+
+
 def prepare_png_icon(path):
     """
     Read the PNG at ``path`` and return PNG bytes small enough to embed in an icon (scaled down when needed).
 
-    :raises CoverError: when the file cannot be read, is not an image, or cannot be made small enough.
+    The content decides, never the file name: the bytes must start with the PNG signature and have a well-formed
+    header before Qt sees them, and Qt is told to decode PNG only (other formats, such as TIFF or SVG, have decoders
+    with their own bugs and, for SVG, file access).
+
+    :raises CoverError: when the file cannot be read, is not a PNG, or cannot be made small enough.
     """
-    try:
-        with open(path, 'rb') as handle:
-            raw = handle.read(MAX_PNG_FILE_BYTES + 1)
-    except OSError as error:
-        raise CoverError(f'The image could not be read: {error.strerror or "I/O error"}.') from error
+    raw = read_regular_file(path, MAX_PNG_FILE_BYTES + 1)
     if len(raw) > MAX_PNG_FILE_BYTES:
         raise CoverError('The image file is too large.')
-    announced = _announced_size(raw)
-    if announced is None or announced.width() * announced.height() > MAX_DECODE_PIXELS:
+    if not raw.startswith(PNG_SIGNATURE):
+        raise CoverError('The file is not a PNG image.')
+    width, height = png_size(raw)
+    if width <= 0 or height <= 0 or width * height > MAX_DECODE_PIXELS:
         raise CoverError('The file is not a usable image.')
-    image = QtGui.QImage.fromData(raw)
+    image = QtGui.QImage.fromData(raw, 'PNG')
     if image.isNull():
         raise CoverError('The file is not a usable image.')
     for side in ICON_SIDES:
@@ -57,18 +86,6 @@ def prepare_png_icon(path):
         if data is not None and len(data) <= MAX_PNG_ICON_BYTES:
             return data
     raise CoverError('The image is too complex to use as an icon; try a smaller or simpler one.')
-
-
-def _announced_size(raw):
-    """The size the image header announces, read without decoding the pixels; ``None`` when unreadable."""
-    buffer = QtCore.QBuffer()
-    buffer.setData(raw)
-    buffer.open(QtCore.QIODevice.ReadOnly)
-    reader = QtGui.QImageReader(buffer)
-    size = reader.size()
-    if not size.isValid() or size.width() <= 0 or size.height() <= 0:
-        return None
-    return size
 
 
 def _encode_png(image):

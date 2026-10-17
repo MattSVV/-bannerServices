@@ -47,7 +47,7 @@ from ..security.html_policy import sanitize_svg
 from ..security.redaction import redact
 from .background import run_in_background
 from .i18n import localize
-from .iconimage import MAX_PNG_FILE_BYTES, prepare_png_icon, svg_pixmap
+from .iconimage import prepare_png_icon, read_regular_file, svg_pixmap
 
 log = logging.getLogger(__name__)
 
@@ -564,14 +564,11 @@ class CoverEditForm(QtWidgets.QDialog):
     def _icon_from_file(path):
         suffix = path.suffix.lower()
         if suffix == '.svg':
-            with open(path, 'rb') as handle:
-                raw = handle.read(MAX_SVG_FILE_BYTES + 1)
+            raw = read_regular_file(path, MAX_SVG_FILE_BYTES + 1)
             if len(raw) > MAX_SVG_FILE_BYTES:
                 raise DomainError(translate('PortadasPlugin.EditForm', 'The SVG file is too large.'))
             return icon_from_svg_text(raw.decode('utf-8', 'replace'))
         if suffix == '.png':
-            if path.stat().st_size > MAX_PNG_FILE_BYTES:
-                raise DomainError(translate('PortadasPlugin.EditForm', 'The image file is too large.'))
             return icon_from_png_bytes(prepare_png_icon(path))
         raise DomainError(translate('PortadasPlugin.EditForm', 'Choose an SVG or PNG file.'))
 
