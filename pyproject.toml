@@ -1,0 +1,31 @@
+[project]
+name = "openlp-portadas"
+version = "0.1.0"
+description = "Portadas: sermon cover slides plugin for OpenLP 3.1.x"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.10"
+# Runtime dependencies are intentionally empty: the plugin may only use what OpenLP ships.
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyqt5"
+addopts = "-ra"
+
+[tool.coverage.run]
+# Gate on the pure layers only; adapters need Qt/OpenLP and are covered by integration tests.
+source = ["portadas/domain", "portadas/application"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
