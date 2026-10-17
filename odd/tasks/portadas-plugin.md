@@ -82,8 +82,9 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T08
 - [x] T06b (reopened security fix)
 - [x] T07b (reopened renderer/repository hardening)
-- [ ] T09
-- [ ] T10
+- [x] T09
+- [x] T10
+- [ ] T06c (low-severity sanitizer residuals)
 - [ ] T11
 - [ ] T12
 - [ ] T13
@@ -120,8 +121,10 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 | T06 | done | `cce22a7` | RED `ModuleNotFoundError ...security.html_policy`, GREEN 350 total. Orchestrator spot check: `scripts/check.sh`, 350 passed, coverage 96.16% (gate 90%). Assess tier: high (3143 lines, hot_path). Adversarial verifier: **5 confirmed CSS/text bypasses + regex DoS** → T06b opened. |
 | T07 | done | `4b5df9c` | RED `ModuleNotFoundError ...qt_renderer`, GREEN. 26 renderer tests run offscreen (no skips); 60-render stress test had 0 bad images; PNGs in `docs/img/` (noche-dorada pixel `#0e1422`). A local HTTP server saw 0 hits for remote requests. |
 | T08 | done | `b038b4b` | RED `...application.create_cover` missing, GREEN. Orchestrator spot check: `scripts/check.sh`, 533 passed, coverage 96.37%. Independent verifier: sandbox held 29 network vectors and all file-escape vectors; **2 hangs + soft timeout + orphan PNG loss** → T07b opened. |
-| T06b | done | `b955cb3` | Confirmed bypasses in `portadas/security/css_policy.py`: comment markers inside strings, escaped `\/*`, escaped quote in `content`, `list-style` strings, `<ol>` numbering, and super-linear scripture regex. Reason: an independent adversarial verification rendered the bypasses in real QtWebEngine. Fix: CSS Syntax L3 tokenizer + allowlist, `<ol>` removed, forced `list-style:none`, bundled fonts only, linear scripture parser with caps. RED 41+15 failing tests, then GREEN. Orchestrator spot check: 801 passed, 97.04%. Re-verification by the original adversarial verifier is running. |
+| T06b | done | `b955cb3` | Confirmed bypasses in `portadas/security/css_policy.py`: comment markers inside strings, escaped `\/*`, escaped quote in `content`, `list-style` strings, `<ol>` numbering, and super-linear scripture regex. Reason: an independent adversarial verification rendered the bypasses in real QtWebEngine. Fix: CSS Syntax L3 tokenizer + allowlist, `<ol>` removed, forced `list-style:none`, bundled fonts only, linear scripture parser with caps. RED 41+15 failing tests, then GREEN. Orchestrator spot check: 801 passed, 97.04%. Re-verification: all original payloads closed; 170 new CSS payloads and 4.42M fuzz runs gave 0 audit failures. 2 low residuals → T06c. |
 | T07b | done | `44d6c35` | Reason: independent T07/T08 verification. Fixed: `render()` hang after `close()`, FIFO hang (`O_NONBLOCK`), canvas cap plus post-grab deadline check, orphan PNG kept, no paths in user errors, JSON as commit marker, page deleted before profile. RED shown for each, then GREEN. Orchestrator spot check: 816 passed, 97.04%. Residual: soft render-time bound (documented). |
+| T09 | done | `fa9eb62` | RED: ImportError/ModuleNotFoundError plus 21 failing media item tests, then GREEN 913. Library tab, editor with debounced live preview, icon upload (SVG strict reject; PNG ≤96 KB wrapped as data-URI `<image>`, allowed only by `sanitize_svg(allow_png_image=True)`, never for AI). |
+| T10 | done | `aeae46b` | RED 18 failed with a stub, then GREEN 934. Image service items; reopening a service after the cover is deleted is tested. Runtime: `scripts/run-headless.sh` exit 0, `Portadas library loaded: 2 cover(s)`, 0 Portadas errors. Orchestrator spot check: 934 passed. GUI add-to-service/live is N/A headless; covered by the manual checklist in `docs/testing.md`. |
 
 ## Accepted changes
 
@@ -131,6 +134,7 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - Renderer: headless works with `QT_QPA_PLATFORM=offscreen` plus `AA_ShareOpenGLContexts`, with a canvas canary against the white-frame race. Each render takes about 0.5 s.
 - Repository: `png_path(id)` instead of a thumbnail cache. Uploaded icons are not supported yet (gap for T09).
 - Overflow detection relies on field CSS class names (`docs/templates.md`), so AI templates must use them.
+- `MAX_INLINE_SVG` raised to 140,000 characters for embedded PNG icons. Template thumbnails load lazily, and saving blocks for about 0.5 s (possible follow-up).
 - Cross-chapter ranges (`Juan 3:16-4:2`) are rejected for now. This is a possible follow-up.
 
 ## Findings carried forward
@@ -142,4 +146,4 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 
 ## Next step
 
-T09 + T10 (library tab UI, editor, service integration) by one writer. Re-verification of T06b is still running.
+T06c + T11 (settings tab + secret store) by one writer. In parallel, a verifier for T09/T10 (upload path, service integration).

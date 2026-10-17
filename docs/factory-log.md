@@ -29,3 +29,6 @@ One row per backlog task: how the factory executed it and what it cost. It is up
 | T07-T08 verify | delegated adversarial verifier | 1 | n/a | FAIL: 2 hangs, soft timeout, orphan loss | 0 | n/a | Sandbox itself held |
 | T06b | delegated | 1 | (is rework of T06) | check.sh pass, 801 tests | 1851 | `b955cb3` | Security rework caused by verification |
 | T07b | delegated | 1 | (is rework of T07/T08) | check.sh pass, 816 tests | 291 | `44d6c35` | Robustness rework caused by verification |
+| T06b re-verify | delegated adversarial verifier (resumed) | 1 | n/a | PASS, 2 low residuals | 0 | n/a | Resumed the same verifier to save context |
+| T09 | delegated | 1 (shared T09-T10) | 1 (OpenLP shortcut KeyError, ActionList test isolation) | check.sh pass, 913 tests | 2429 | `fa9eb62` | UI is the largest unit |
+| T10 | delegated | shared | 0 | check.sh pass, 934 tests; headless OK | 582 | `aeae46b` | Service reopen after delete tested |
