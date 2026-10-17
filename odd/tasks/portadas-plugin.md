@@ -78,8 +78,9 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T04
 - [x] T05
 - [x] T06
-- [ ] T07
-- [ ] T08
+- [x] T07
+- [x] T08
+- [ ] T06b (reopened security fix, see below)
 - [ ] T09
 - [ ] T10
 - [ ] T11
@@ -115,22 +116,28 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 | T03 | done | `33fc722` | RED `ModuleNotFoundError contrib.plugins.portadas.portadasplugin`, then RED `KeyError 'portadas/status'`, then GREEN 3 passed. Runtime: `scripts/run-headless.sh`, exit 0, log `Loaded plugin <class 'contrib.plugins.portadas.portadasplugin.PortadasPlugin'>`, `Initialisation Complete for portadas`. Orchestrator spot check: `scripts/check.sh`, all checks passed. |
 | T04 | done | `08bc47c` | RED `ModuleNotFoundError ...domain.cover`, GREEN 102 tests. Route: delegated writer (shared T04-T06). |
 | T05 | done | `66fafe4` | RED `ModuleNotFoundError ...application.icon_catalog`, GREEN 173 tests. Visual check: `noche-dorada` matches the reference design. |
-| T06 | done | `cce22a7` | RED `ModuleNotFoundError ...security.html_policy`, GREEN 350 total. Orchestrator spot check: `scripts/check.sh`, 350 passed, coverage 96.16% (gate 90%). Assess tier: high (3143 lines, hot_path); adversarial verifier running. |
+| T06 | done | `cce22a7` | RED `ModuleNotFoundError ...security.html_policy`, GREEN 350 total. Orchestrator spot check: `scripts/check.sh`, 350 passed, coverage 96.16% (gate 90%). Assess tier: high (3143 lines, hot_path). Adversarial verifier: **5 confirmed CSS/text bypasses + regex DoS** → T06b opened. |
+| T07 | done | `4b5df9c` | RED `ModuleNotFoundError ...qt_renderer`, GREEN. 26 renderer tests run offscreen (no skips); 60-render stress test had 0 bad images; PNGs in `docs/img/` (noche-dorada pixel `#0e1422`). A local HTTP server saw 0 hits for remote requests. |
+| T08 | done | `b038b4b` | RED `...application.create_cover` missing, GREEN. Orchestrator spot check: `scripts/check.sh`, 533 passed, coverage 96.37%. Independent verifier running. |
+| T06b | reopened | | Confirmed bypasses in `portadas/security/css_policy.py`: comment markers inside strings, escaped `\/*`, escaped quote in `content`, `list-style` strings, `<ol>` numbering, and super-linear scripture regex. Reason: an independent adversarial verification rendered the bypasses in real QtWebEngine. |
 
 ## Accepted changes
 
 - `Cover.readings_label` (default "LECTURAS") plus the `{{readings_label}}` placeholder. Reason: the text guarantee forbids hard-coded visible text, so the static heading must be a placeholder.
 - The sanitizer uses the stdlib `html.parser` with an allowlist rebuild instead of lxml or bs4. This is fewer dependencies, which is fine.
 - OFL fonts are bundled (Playfair Display, Outfit, about 690 KB) in `portadas/assets/fonts/`.
+- Renderer: headless works with `QT_QPA_PLATFORM=offscreen` plus `AA_ShareOpenGLContexts`, with a canvas canary against the white-frame race. Each render takes about 0.5 s.
+- Repository: `png_path(id)` instead of a thumbnail cache. Uploaded icons are not supported yet (gap for T09).
+- Overflow detection relies on field CSS class names (`docs/templates.md`), so AI templates must use them.
 - Cross-chapter ranges (`Juan 3:16-4:2`) are rejected for now. This is a possible follow-up.
 
 ## Findings carried forward
 
 - OpenLP imports the plugin as `contrib.plugins.portadas.portadasplugin`. Internal imports are relative. `tests/conftest.py` replicates this with a temp data dir.
 - Headless runs need a pre-seeded throwaway profile (`scripts/run-headless.sh`, `docs/testing.md`).
-- **Risk for T07:** QtWebEngine display windows time out under `QT_QPA_PLATFORM=offscreen`. xvfb is not installed. The renderer must work in the real app (hidden widget) and in tests; investigate in T07.
+- ~~Risk for T07: offscreen QtWebEngine~~ resolved in T07.
 - During T03 the writer's first unisolated run touched the user's real OpenLP profile. It created a backup conf and data dirs, and installed the dev symlink `~/.local/share/openlp/contrib/plugins/portadas`. This is harmless, and the user should know.
 
 ## Next step
 
-T07 (renderer) + T08 (repository) by one writer. In parallel, an adversarial read-only verifier for the T06 sanitizer.
+T06b security fix (writer). In parallel, an independent verifier for T07/T08. Then T09 + T10 (UI and service).

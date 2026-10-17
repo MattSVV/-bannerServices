@@ -23,3 +23,6 @@ One row per backlog task: how the factory executed it and what it cost. It is up
 | T05 | delegated | shared | 1 (4 test bugs) | check.sh pass | 1178 | `66fafe4` | Templates + icons + fonts; visual parity checked |
 | T06 | delegated | shared | 1 (corpus fixes, idempotence, svg) | check.sh pass, 350 tests | 969 | `cce22a7` | Malicious payload corpus |
 | T02/T03 verify | delegated verifier | 1 | 0 | 6/6 PASS | 0 | n/a | Independent check for high-risk shell scripts |
+| T04-T06 verify | delegated adversarial verifier | 1 | n/a | **FAIL: 5 bypasses + regex DoS** | 0 | n/a | Green tests did not mean safe; reopened as T06b |
+| T07 | delegated | 1 (shared T07-T08) | 1 (white-frame race fixed with a canary) | check.sh pass | ~1086 | `4b5df9c` | Headless QtWebEngine works offscreen |
+| T08 | delegated | shared | 0 | check.sh pass, 533 tests | ~1203 | `b038b4b` | Traversal-safe repo + use case |
