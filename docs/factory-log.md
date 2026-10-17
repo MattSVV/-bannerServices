@@ -37,4 +37,5 @@ One row per backlog task: how the factory executed it and what it cost. It is up
 | T11 | delegated | shared | 1 (test fake) | check.sh pass, 1059 tests; headless OK | 1674 | `8c0b962` | Secrets + settings |
 | T09b | delegated | 1 (shared T09b-T12) | (rework of T09) | check.sh pass, 1074 tests | 408 | `66fa62e` | Fixes from verification |
 | T12 | delegated | shared | 0 | check.sh pass, 1241 tests | 2411 | `9a21107` | Largest backend unit |
-| T20 | orchestrator spot check | 0 | n/a | **gate hang (intermittent)** | | | Found only because the orchestrator re-runs the gate itself |
+| T20 | delegated | 1 (shared T20-T12b) | 0 | check.sh pass, 1270 tests, 97.28% | n/a | `8fe4dc5` | Root cause was a leaked watchdog; found only because the orchestrator re-ran the gate itself. Verifier pending |
+| T12b | delegated | shared | (rework of T12) | check.sh pass, 1270 tests | n/a | `ed06c00` | Deadlines, proxy env, template depth. Verifier pending |
