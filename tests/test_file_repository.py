@@ -99,6 +99,24 @@ def test_delete_removes_both_files(repo, tmp_path):
     assert list((tmp_path / 'store').iterdir()) == []
 
 
+def test_a_failed_delete_is_a_repository_error_and_the_json_goes_first(repo, tmp_path, monkeypatch):
+    repo.save(make_cover(), PNG)
+    real_unlink = type(tmp_path).unlink
+
+    def deny_png(self, *args, **kwargs):
+        if self.suffix == '.png':
+            raise PermissionError('read-only')
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(tmp_path), 'unlink', deny_png)
+
+    with pytest.raises(RepositoryError, match='could not be deleted'):
+        repo.delete('c1')
+
+    monkeypatch.undo()
+    assert repo.list() == []  # the JSON marker went first, so no half-deleted cover is listed
+
+
 def test_unknown_covers_are_not_found(repo):
     for action in (repo.get, repo.delete, repo.png_path):
         with pytest.raises(CoverNotFound):

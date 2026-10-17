@@ -248,6 +248,20 @@ def test_a_refusal_is_reported():
         designer.design(REQUEST)
 
 
+def test_an_anthropic_refusal_is_reported():
+    designer, _, _ = make('anthropic', FakeResponse(200, {'content': [], 'stop_reason': 'refusal'}))
+
+    with pytest.raises(DesignError, match='refused'):
+        designer.design(REQUEST)
+
+
+def test_an_anthropic_answer_without_content_blocks_is_an_unexpected_answer():
+    designer, _, _ = make('anthropic', FakeResponse(200, {'stop_reason': 'end_turn'}))
+
+    with pytest.raises(DesignError, match='unexpected answer'):
+        designer.design(REQUEST)
+
+
 def test_gemini_blocked_prompts_are_reported():
     designer, _, _ = make('gemini', FakeResponse(200, {'promptFeedback': {'blockReason': 'SAFETY'}}))
 

@@ -126,3 +126,16 @@ def test_scheme_matching_is_case_insensitive(roots):
 def test_with_no_roots_only_data_urls_pass(roots):
     assert not is_url_allowed(file_url(roots['assets'] / 'ok.png'), ())
     assert is_url_allowed('data:text/plain,hi', ())
+
+
+def test_a_url_the_parser_rejects_is_refused_instead_of_raising(roots):
+    assert is_url_allowed('http://[::1', roots['roots']) is False  # unbalanced IPv6 bracket: urlsplit raises ValueError
+
+
+def test_roots_on_another_drive_are_skipped_without_raising(roots, monkeypatch):
+    def other_drive(paths):
+        raise ValueError("Paths don't have the same drive")
+
+    monkeypatch.setattr(os.path, 'commonpath', other_drive)
+
+    assert is_url_allowed((roots['assets'] / 'ok.png').as_uri(), roots['roots']) is False
