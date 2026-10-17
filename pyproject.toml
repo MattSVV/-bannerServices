@@ -15,7 +15,7 @@ addopts = "-ra"
 
 [tool.coverage.run]
 # Gate on the pure layers only; adapters need Qt/OpenLP and are covered by integration tests.
-source = ["portadas/domain", "portadas/application"]
+source = ["portadas/domain", "portadas/application", "portadas/security"]
 branch = true
 
 [tool.coverage.report]

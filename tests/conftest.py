@@ -26,7 +26,10 @@ contrib.plugins.<name>.<name>plugin (see openlp.core.common.extension_loader).
 The fixtures below reproduce that scheme with a temporary data dir that holds a symlink
 to this repository's ``portadas`` package, so tests import the plugin exactly as OpenLP does.
 """
+import atexit
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -34,17 +37,20 @@ import pytest
 PLUGIN_NAME = 'portadas'
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# The data dir is built at import time so test modules can import ``contrib.plugins.portadas.*`` at module level
+# (collection happens before any fixture runs).
+_DATA_DIR = Path(tempfile.mkdtemp(prefix='openlp-data-'))
+_PLUGINS_DIR = _DATA_DIR / 'contrib' / 'plugins'
+_PLUGINS_DIR.mkdir(parents=True)
+(_PLUGINS_DIR / PLUGIN_NAME).symlink_to(REPO_ROOT / PLUGIN_NAME, target_is_directory=True)
+sys.path.insert(0, str(_DATA_DIR))
+atexit.register(shutil.rmtree, _DATA_DIR, ignore_errors=True)
+
 
 @pytest.fixture(scope='session')
-def contrib_data_dir(tmp_path_factory):
+def contrib_data_dir():
     """A fake OpenLP DataDir whose contrib/plugins/portadas links to the repo package."""
-    data_dir = tmp_path_factory.mktemp('openlp-data')
-    plugins_dir = data_dir / 'contrib' / 'plugins'
-    plugins_dir.mkdir(parents=True)
-    (plugins_dir / PLUGIN_NAME).symlink_to(REPO_ROOT / PLUGIN_NAME, target_is_directory=True)
-    sys.path.insert(0, str(data_dir))
-    yield data_dir
-    sys.path.remove(str(data_dir))
+    return _DATA_DIR
 
 
 @pytest.fixture(scope='session')

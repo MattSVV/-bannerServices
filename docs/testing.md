@@ -7,8 +7,8 @@ scripts/check.sh
 ```
 
 Runs `ruff` and the full pytest suite with coverage, using `../openlp/.venv/bin/python` (override with `PYTHON`).
-Coverage is measured on `portadas/domain` and `portadas/application` only; the minimum is `COVERAGE_MIN`
-(default `0`, raised as those layers grow).
+Coverage is measured on `portadas/domain`, `portadas/application` and `portadas/security` only; the minimum is `COVERAGE_MIN`
+(default `90`).
 
 The venv needs the dev-only tools `pytest-cov` and `ruff` (`../openlp/.venv/bin/pip install pytest-cov ruff`).
 They are not plugin runtime dependencies.
@@ -24,7 +24,7 @@ Rules that follow from this:
 
 - Inside `portadas/`, use **relative imports**. The package name is `contrib.plugins.portadas`, not `portadas`.
 - Tests must not `import portadas` directly: that would load a second copy under another name.
-- `portadas/domain` and `portadas/application` must not import Qt or OpenLP.
+- `portadas/domain` and `portadas/application` must not import Qt or OpenLP. Tests import as `contrib.plugins.portadas.*` (conftest wires the path at import time).
 - OpenLP reads `<name>/status` while instantiating a plugin, so the plugin registers a default for it at import time.
 
 ## Runtime harness (headless OpenLP)
