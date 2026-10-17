@@ -80,6 +80,12 @@ that the key never appears in OpenLP's settings or their export, in logs, in the
 - **Server address.** For OpenAI-compatible servers only `https://` is accepted, plus `http://` to `localhost`,
   `127.0.0.1` or `::1`. User names and passwords in the URL, queries and fragments are refused, because URLs end up in
   logs and error messages.
+- **Key bound to its server (SEC-003).** The key of an OpenAI-compatible server is stored together with the normalized
+  origin it was entered for (`scheme://host[:port]`, in the secrets file as `origins`). It is sent only while the
+  configured address has that same origin; otherwise the editor and *Test connection* refuse and ask for the key again,
+  and the settings tab shows the host the key goes to. This closes the route where an imported `OpenLP.conf` changes
+  `portadas/ai base url` and the stored key follows it to the attacker. **Migration:** a key saved by an earlier build
+  has no origin and is treated as unverified: it is not sent until the user types it again (once) in the settings tab.
 
 ### Log redaction (`portadas/security/redaction.py`)
 

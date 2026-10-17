@@ -31,7 +31,7 @@ from openlp.core.common.i18n import translate
 from ..adapters.ai import create_designer
 from ..application.ai_config import COMPATIBLE, validate_base_url
 from ..application.ports import DesignError, SecretStoreError
-from .ai_settings import default_secret_store, load_ai_config
+from .ai_settings import KEY_OK, default_secret_store, key_server_status, load_ai_config
 
 log = logging.getLogger(__name__)
 
@@ -57,4 +57,9 @@ def make_designer(config=None, secret_store=None, create=create_designer):
         log.warning('The saved API key could not be read.')
         raise DesignError(translate('PortadasPlugin.EditForm', 'The saved API key could not be read. Enter it again '
                                     'in Settings > Configure OpenLP > Covers.')) from None
+    if config.provider == COMPATIBLE and api_key and key_server_status(store, config.base_url)[0] != KEY_OK:
+        # The key was entered for another server (or for none): an imported settings file could have redirected it.
+        log.warning('The saved API key was not sent: it is not tied to the configured server.')
+        raise DesignError(translate('PortadasPlugin.EditForm', 'The saved API key was entered for another server. '
+                                    'Enter the key again in Settings > Configure OpenLP > Covers.'))
     return create(config, api_key)

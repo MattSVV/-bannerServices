@@ -98,6 +98,10 @@ UI = {
         'The cover is not valid': 'La portada no es válida',
         'The preview appears here.': 'La vista previa aparece aquí.',
         'The preview could not be rendered: {error}': 'No se pudo generar la vista previa: {error}',
+        'The saved API key was entered for another server. Enter the key again in Settings > Configure OpenLP > '
+        'Covers.':
+            'La clave de API guardada se escribió para otro servidor. Escríbala de nuevo en Configuración > '
+            'Configurar OpenLP > Portadas.',
         'The saved API key could not be read. Enter it again in Settings > Configure OpenLP > Covers.':
             'No se pudo leer la clave de API guardada. Escríbala de nuevo en Configuración > Configurar OpenLP > '
             'Portadas.',
@@ -135,6 +139,8 @@ UI = {
         'API key:': 'Clave de API:',
         'An API key is saved. Type a new one to replace it.':
             'Hay una clave de API guardada. Escriba una nueva para reemplazarla.',
+        'An API key is saved. It is only sent to {host}. Type a new one to replace it.':
+            'Hay una clave de API guardada. Solo se envía a {host}. Escriba una nueva para reemplazarla.',
         'Anthropic': 'Anthropic',
         'Clear': 'Borrar',
         'Covers settings': 'Configuración de Portadas',
@@ -150,10 +156,15 @@ UI = {
         'Request timeout:': 'Tiempo máximo de espera:',
         'Server address:': 'Dirección del servidor:',
         'Test connection': 'Probar conexión',
+        'Testing {host}...': 'Probando {host}...',
         'Testing...': 'Probando...',
         'The API key was not saved: it is empty, too short or long, or contains spaces or unsupported characters.':
             'No se guardó la clave de API: está vacía, es demasiado corta o larga, o contiene espacios o '
             'caracteres no admitidos.',
+        'The saved key is not tied to a server. Enter the key again for {host}.':
+            'La clave guardada no está asociada a ningún servidor. Escriba la clave de nuevo para {host}.',
+        'The saved key was entered for {saved}. Enter the key again for {host}.':
+            'La clave guardada se escribió para {saved}. Escriba la clave de nuevo para {host}.',
         'The saved key will be removed when you press OK.': 'La clave guardada se eliminará al pulsar Aceptar.',
         'The server address was not saved: {error}': 'No se guardó la dirección del servidor: {error}',
         'https://host/v1 or http://localhost:11434/v1': 'https://host/v1 o http://localhost:11434/v1',

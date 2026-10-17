@@ -103,5 +103,23 @@ def validate_base_url(url):
     return url
 
 
+def origin_of(url):
+    """
+    The normalized origin (``scheme://host[:port]``, lower case, default port dropped) of a base URL.
+
+    An API key is bound to this value, not to the whole address: moving a server to another path keeps the key,
+    moving it to another host, port or scheme does not.
+
+    :raises ValueError: when ``url`` is refused by ``validate_base_url``.
+    """
+    parts = urlsplit(validate_base_url(url))
+    scheme, host, port = parts.scheme.lower(), parts.hostname.lower(), parts.port
+    if ':' in host:
+        host = f'[{host}]'
+    if port is not None and port != {'http': 80, 'https': 443}[scheme]:
+        host = f'{host}:{port}'
+    return f'{scheme}://{host}'
+
+
 def _is_local(host):
     return host.lower() in LOCAL_HOSTS

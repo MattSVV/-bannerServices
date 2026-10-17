@@ -99,7 +99,9 @@ class DpapiCipher:
 
 class FileSecretStore(SecretStore):
     """
-    Stores ``{"version": 1, "keys": {provider: key}}`` in ``<directory>/api-keys``.
+    Stores ``{"version": 1, "keys": {provider: key}, "origins": {provider: origin}}`` in ``<directory>/api-keys``.
+    An origin says which server a key was entered for (see ``ai_config.origin_of``); it is optional, and a key without
+    one is "unverified".
 
     :param directory: the (private) directory; OpenLP's ``AppLocation.get_section_data_path('portadas') / 'secrets'``.
     :param cipher: encrypts the whole file when given; defaults to DPAPI on Windows and to none elsewhere.
@@ -115,26 +117,37 @@ class FileSecretStore(SecretStore):
     # --- port
     def get_api_key(self, provider):
         _check_provider(provider)
-        key = self._read().get(provider)
+        key = self._read()[0].get(provider)
         if key:
             register_secret(key)
         return key or None
 
-    def set_api_key(self, provider, key):
+    def get_api_key_origin(self, provider):
+        _check_provider(provider)
+        keys, origins = self._read()
+        return origins.get(provider) if provider in keys else None
+
+    def set_api_key(self, provider, key, origin=None):
         _check_provider(provider)
         key = _check_key(key)
+        if origin is not None and (not isinstance(origin, str) or not origin or len(origin) > 300):
+            raise ValueError('The server address is not valid.')
         with self._exclusive():
-            keys = self._read_for_update()
+            keys, origins = self._read_for_update()
             keys[provider] = key
+            origins.pop(provider, None)
+            if origin:
+                origins[provider] = origin
             register_secret(key)
-            self._write(keys)
+            self._write(keys, origins)
 
     def delete_api_key(self, provider):
         _check_provider(provider)
         with self._exclusive():
-            keys = self._read_for_update()
+            keys, origins = self._read_for_update()
+            origins.pop(provider, None)
             if keys.pop(provider, None) is not None:
-                self._write(keys)
+                self._write(keys, origins)
 
     # --- one writer at a time
     @contextlib.contextmanager
@@ -174,23 +187,23 @@ class FileSecretStore(SecretStore):
 
     # --- file handling
     def _read(self):
-        """Return ``{provider: key}``; an absent, untrusted or unreadable file reads as empty (and is logged)."""
+        """Return ``({provider: key}, {provider: origin})``; an absent, untrusted or unreadable file reads as empty."""
         try:
             info = os.lstat(self.path)
         except FileNotFoundError:
-            return {}
+            return {}, {}
         except OSError:
             log.warning('The API key file could not be inspected.')
-            return {}
+            return {}, {}
         problem = self._trust_problem(info)
         if problem:
             log.warning('The API key file was ignored: %s.', problem)
-            return {}
-        keys = self._parse()
-        if keys is None:
+            return {}, {}
+        content = self._parse()
+        if content is None:
             log.warning('The API key file could not be read and was ignored.')
-            return {}
-        return keys
+            return {}, {}
+        return content
 
     def _read_for_update(self):
         """
@@ -201,12 +214,12 @@ class FileSecretStore(SecretStore):
         try:
             info = os.lstat(self.path)
         except FileNotFoundError:
-            return {}
+            return {}, {}
         except OSError:
             raise SecretStoreError('The stored API keys could not be inspected.') from None
         problem = self._trust_problem(info)
-        keys = None if problem else self._parse()
-        if problem or keys is None:
+        content = None if problem else self._parse()
+        if problem or content is None:
             # An untrusted or unreadable file is never merged into the new one (its content may have been altered by
             # someone else), but it is not dropped either: it is kept, with owner-only access, as the one backup.
             backup = self.path.with_name(FILE_NAME + CORRUPT_SUFFIX)
@@ -218,8 +231,8 @@ class FileSecretStore(SecretStore):
                                        ) from None
             log.warning('The API key file %s; it was kept as %s and a new one is started.',
                         f'was refused: {problem}' if problem else 'could not be read', backup.name)
-            return {}
-        return keys
+            return {}, {}
+        return content
 
     def _make_private(self, path):
         """Owner-only access for a moved-aside regular file (a symlink is left alone: chmod would follow it)."""
@@ -227,7 +240,7 @@ class FileSecretStore(SecretStore):
             os.chmod(path, 0o600)
 
     def _parse(self):
-        """The ``{provider: key}`` of a trusted file, or ``None`` when its content cannot be used."""
+        """``({provider: key}, {provider: origin})`` of a trusted file, or ``None`` when its content cannot be used."""
         try:
             raw = self.path.read_bytes()
             if self.cipher is not None:
@@ -239,7 +252,12 @@ class FileSecretStore(SecretStore):
                 raise ValueError('unexpected structure')
         except (OSError, ValueError, KeyError, TypeError, SecretStoreError):
             return None
-        return {name: value for name, value in keys.items() if name in PROVIDERS}
+        origins = data.get('origins')
+        if not isinstance(origins, dict):  # absent (an older file) or malformed: the keys are then unverified
+            origins = {}
+        return ({name: value for name, value in keys.items() if name in PROVIDERS},
+                {name: value for name, value in origins.items()
+                 if name in PROVIDERS and isinstance(value, str) and value})
 
     def _trust_problem(self, info):
         if stat.S_ISLNK(info.st_mode):
@@ -253,9 +271,10 @@ class FileSecretStore(SecretStore):
                 return 'it is group- or world-accessible (run chmod 600 on it)'
         return None
 
-    def _write(self, keys):
+    def _write(self, keys, origins):
         """Write atomically: a private temp file in the same directory, flushed to disk, then renamed over the old."""
-        payload = json.dumps({'version': SCHEMA_VERSION, 'keys': keys}, sort_keys=True).encode('utf-8')
+        payload = json.dumps({'version': SCHEMA_VERSION, 'keys': keys, **({'origins': origins} if origins else {})},
+                             sort_keys=True).encode('utf-8')
         temp_name = None
         try:
             self._prepare_directory()

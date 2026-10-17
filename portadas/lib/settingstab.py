@@ -25,6 +25,7 @@ Only non-secret values go to ``Settings``. The key goes to the ``SecretStore`` a
 empty and a "saved" hint appears instead. A key is only deleted when the user presses Clear and then OK.
 """
 import logging
+from urllib.parse import urlsplit
 
 from openlp.core.common.i18n import translate
 from openlp.core.lib.settingstab import SettingsTab
@@ -38,17 +39,22 @@ from ..application.ai_config import (
     MIN_TIMEOUT,
     PROVIDERS,
     AiConfig,
+    origin_of,
     validate_base_url,
 )
 from ..application.ports import DesignError, SecretStoreError
 from ..security.redaction import redact
-from .ai_settings import default_secret_store, load_ai_config, save_ai_config
+from .ai_settings import KEY_OK, KEY_UNBOUND, default_secret_store, key_server_status, load_ai_config, save_ai_config
 from .background import run_in_background
 from .i18n import localize
 
 log = logging.getLogger(__name__)
 
 SAVED_PLACEHOLDER = '•••• saved'
+
+
+def _host_of(origin):
+    return urlsplit(origin).netloc
 
 
 def provider_labels():
@@ -181,6 +187,7 @@ class PortadasSettingsTab(SettingsTab):
                 message = localize(str(error))
         self.base_url_error_label.setText(message)
         self.base_url_error_label.setVisible(bool(message))
+        self.refresh_key_state()
 
     def refresh_key_state(self):
         context = 'PortadasPlugin.SettingsTab'
@@ -192,11 +199,40 @@ class PortadasSettingsTab(SettingsTab):
         if pending:
             status = translate(context, 'The saved key will be removed when you press OK.')
         elif saved:
-            status = translate(context, 'An API key is saved. Type a new one to replace it.')
+            status = self._saved_key_status(provider) or translate(
+                context, 'An API key is saved. Type a new one to replace it.')
         else:
             status = translate(context, 'No API key saved.')
         self.key_status_label.setText(status)
         self.clear_key_button.setEnabled(saved and not pending)
+
+    def _server_state(self, provider):
+        """``(host, status, saved_host)`` of the compatible server in the field, or ``None`` when not applicable."""
+        if provider != COMPATIBLE:
+            return None
+        text = self.base_url_edit.text()
+        try:
+            host = _host_of(origin_of(text))
+            status, saved = key_server_status(self.secret_store, text)
+        except ValueError:
+            return None
+        return host, status, _host_of(saved) if saved else None
+
+    def _saved_key_status(self, provider):
+        """The status line of a saved key for an OpenAI-compatible server: where it will go, or why it will not."""
+        state = self._server_state(provider)
+        if state is None:
+            return ''
+        context = 'PortadasPlugin.SettingsTab'
+        host, status, saved_host = state
+        if status == KEY_OK:
+            return translate(context, 'An API key is saved. It is only sent to {host}. Type a new one to replace it.'
+                             ).format(host=host)
+        if status == KEY_UNBOUND:
+            return translate(context, 'The saved key is not tied to a server. Enter the key again for {host}.'
+                             ).format(host=host)
+        return translate(context, 'The saved key was entered for {saved}. Enter the key again for {host}.').format(
+            saved=saved_host, host=host)
 
     def on_clear_key(self):
         self._pending_clear.add(self.selected_provider())
@@ -259,7 +295,7 @@ class PortadasSettingsTab(SettingsTab):
         typed = self.api_key_edit.text().strip()
         try:
             if typed:
-                self.secret_store.set_api_key(provider, typed)
+                self.secret_store.set_api_key(provider, typed, origin=self._origin_for_save(provider))
                 self._key_saved[provider] = True
                 self._pending_clear.discard(provider)
             elif provider in self._pending_clear:
@@ -272,17 +308,36 @@ class PortadasSettingsTab(SettingsTab):
         except SecretStoreError as error:
             warnings.append(redact(localize(str(error))))
 
+    def _origin_for_save(self, provider):
+        """The server a typed key is bound to: the saved address of an OpenAI-compatible server, else nothing."""
+        if provider != COMPATIBLE:
+            return None
+        try:
+            return origin_of(load_ai_config(self.settings).base_url)
+        except ValueError:
+            return None  # no valid address was saved: the key stays unverified and must be entered again
+
     def show_warning(self, text):
         QtWidgets.QMessageBox.warning(self, translate('PortadasPlugin.SettingsTab', 'Covers settings'), text)
 
     # --- test connection
     def on_test_connection(self):
         provider = self.selected_provider()
-        api_key = self.api_key_edit.text().strip() or self._stored_key(provider)
+        typed = self.api_key_edit.text().strip()
+        api_key = typed or self._stored_key(provider)
         config, probe = self.current_config(), self.test_connection
         self._cancel_test()
+        state = self._server_state(provider)
+        if api_key and not typed and state is not None and state[1] != KEY_OK:
+            # The stored key belongs to another server (an imported settings file may have changed the address).
+            self.test_result_label.setText(self._saved_key_status(provider))
+            return
         self.test_button.setEnabled(False)
-        self.test_result_label.setText(translate('PortadasPlugin.SettingsTab', 'Testing...'))
+        if state is not None:
+            self.test_result_label.setText(translate('PortadasPlugin.SettingsTab', 'Testing {host}...').format(
+                host=state[0]))
+        else:
+            self.test_result_label.setText(translate('PortadasPlugin.SettingsTab', 'Testing...'))
         self._test_job = run_in_background(lambda: self._probe(probe, config, api_key), self._test_done,
                                            self._test_failed)
 

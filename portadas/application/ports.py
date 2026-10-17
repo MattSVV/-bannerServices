@@ -154,9 +154,17 @@ class SecretStore(ABC):
         """
 
     @abstractmethod
-    def set_api_key(self, provider, key):
+    def get_api_key_origin(self, provider):
         """
-        Store ``key`` (surrounding whitespace is removed), replacing any previous one.
+        Return the origin (see ``ai_config.origin_of``) the key of ``provider`` was entered for, or ``None`` when none
+        was recorded (a key stored before origins existed, or a provider with a fixed address).
+        """
+
+    @abstractmethod
+    def set_api_key(self, provider, key, origin=None):
+        """
+        Store ``key`` (surrounding whitespace is removed), replacing any previous one and its origin. ``origin`` is
+        the server the key may be sent to; it is recorded for providers whose address the user can change.
 
         :raises ValueError: for an unknown provider or an unusable key.
         :raises SecretStoreError: when the key cannot be written.

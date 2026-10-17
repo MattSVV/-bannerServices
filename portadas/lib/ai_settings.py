@@ -27,7 +27,16 @@ from openlp.core.common.applocation import AppLocation
 from openlp.core.common.settings import Settings
 
 from ..adapters.secret_store import FileSecretStore
-from ..application.ai_config import DEFAULT_PROVIDER, DEFAULT_TIMEOUT, MAX_TIMEOUT, MIN_TIMEOUT, PROVIDERS, AiConfig
+from ..application.ai_config import (
+    COMPATIBLE,
+    DEFAULT_PROVIDER,
+    DEFAULT_TIMEOUT,
+    MAX_TIMEOUT,
+    MIN_TIMEOUT,
+    PROVIDERS,
+    AiConfig,
+    origin_of,
+)
 
 PROVIDER_KEY = 'portadas/ai provider'
 MODEL_KEY = 'portadas/ai model'
@@ -72,3 +81,23 @@ def save_ai_config(settings, config):
 def default_secret_store():
     """The production store: ``<OpenLP data>/portadas/secrets``, private to the current user."""
     return FileSecretStore(AppLocation.get_section_data_path('portadas') / 'secrets')
+
+
+KEY_OK, KEY_CHANGED, KEY_UNBOUND = 'ok', 'changed', 'unbound'
+
+
+def key_server_status(secret_store, base_url):
+    """
+    Whether the stored OpenAI-compatible key may be sent to ``base_url``: ``(status, saved_origin)``.
+
+    ``status`` is ``KEY_OK`` (the key was entered for this origin), ``KEY_CHANGED`` (it was entered for another one,
+    for example because an imported settings file changed the address) or ``KEY_UNBOUND`` (no origin was recorded, as
+    for a key saved by an older version). Only ``KEY_OK`` allows the key to leave the machine.
+
+    :raises ValueError: when ``base_url`` is not a valid server address.
+    """
+    wanted = origin_of(base_url)
+    saved = secret_store.get_api_key_origin(COMPATIBLE)
+    if not saved:
+        return KEY_UNBOUND, None
+    return (KEY_OK if saved == wanted else KEY_CHANGED), saved

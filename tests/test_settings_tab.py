@@ -33,22 +33,30 @@ NEW = 'sk-FAKE-new-key-0123456789abcdef'
 
 
 class MemoryStore(SecretStore):
-    def __init__(self, keys=None, fail_on_set=False):
+    def __init__(self, keys=None, fail_on_set=False, origins=None):
         self.keys = dict(keys or {})
+        self.origins = dict(origins or {})
         self.fail_on_set = fail_on_set
+
+    def get_api_key_origin(self, provider):
+        return self.origins.get(provider)
 
     def get_api_key(self, provider):
         return self.keys.get(provider)
 
-    def set_api_key(self, provider, key):
+    def set_api_key(self, provider, key, origin=None):
         if self.fail_on_set:
             raise SecretStoreError('The API key could not be saved.')
         if len(key.split()) != 1:  # like the real store
             raise ValueError('unusable key')
         self.keys[provider] = key.strip()
+        self.origins.pop(provider, None)
+        if origin:
+            self.origins[provider] = origin
 
     def delete_api_key(self, provider):
         self.keys.pop(provider, None)
+        self.origins.pop(provider, None)
 
 
 class Tab(PortadasSettingsTab):
