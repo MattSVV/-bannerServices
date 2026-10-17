@@ -78,6 +78,8 @@ class CoverEditForm(QtWidgets.QDialog):
         self._custom_icon_item = None
         self._custom_template_html = None  # the AI design of the cover being edited, or None for a built-in template
         self._design_job = None
+        self._icon_before_design = None  # the icon to bring back when the AI design is dropped
+        self._ai_icon = None  # the icon the AI drew, while it is still the selected one
         self._thumb_queue = []
         self._want_thumbnails = thumbnails
         self.warning_labels = {}
@@ -139,6 +141,7 @@ class CoverEditForm(QtWidgets.QDialog):
         self.template_list.setFixedHeight(THUMB_SIZE.height() + 52)
         self.template_list.setObjectName('template_list')
         self.template_list.currentItemChanged.connect(self._template_picked)
+        self.template_list.itemClicked.connect(self._template_picked)  # also re-clicking the selected template
         form_column.addWidget(self.template_label)
         form_column.addWidget(self.template_list)
 
@@ -170,6 +173,7 @@ class CoverEditForm(QtWidgets.QDialog):
         self.status_label = QtWidgets.QLabel()
         self.status_label.setObjectName('status_label')
         self.status_label.setWordWrap(True)
+        self.status_label.setTextFormat(QtCore.Qt.PlainText)  # AI notes and provider errors are never rich text
         self.button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save |
                                                      QtWidgets.QDialogButtonBox.Cancel)
         self.save_button = self.button_box.button(QtWidgets.QDialogButtonBox.Save)
@@ -216,6 +220,7 @@ class CoverEditForm(QtWidgets.QDialog):
         label = QtWidgets.QLabel()
         label.setObjectName(object_name)
         label.setWordWrap(True)
+        label.setTextFormat(QtCore.Qt.PlainText)
         label.setStyleSheet('color: #b00020;' if object_name == 'errorLabel' else 'color: #9a6700;')
         label.setVisible(False)
         return label
@@ -277,6 +282,7 @@ class CoverEditForm(QtWidgets.QDialog):
         """Fill the form from ``cover`` (``None`` for a new cover) and start the preview."""
         self._loading = True
         try:
+            self._icon_before_design = self._ai_icon = None
             self._cover_id = None if cover is None else cover.id
             self._created_at = None if cover is None else cover.created_at
             self.label_edit.setText('' if cover is None else cover.label)
@@ -577,16 +583,33 @@ class CoverEditForm(QtWidgets.QDialog):
 
     def _template_picked(self, *_):
         """Choosing a built-in template by hand replaces the AI design (a template pick would otherwise be ignored)."""
-        if not self._loading and self._custom_template_html is not None:
-            self._custom_template_html = None
-            self._show_ai_note()
+        if not self._loading:
+            self._stop_design_job()  # a design still running would land later and reinstate itself
+            self._drop_design()
         self._edited()
 
     def on_use_template(self):
-        """Drop the AI design and go back to the selected built-in template."""
-        self._custom_template_html = None
-        self._show_ai_note()
+        """Drop the AI design and go back to the selected built-in template (and the icon from before the design)."""
+        self._drop_design()
         self._edited()
+
+    def _drop_design(self):
+        """Forget the AI template; bring back the icon the user had, unless they chose another one since."""
+        if self._custom_template_html is not None:
+            self._custom_template_html = None
+            self._show_ai_note()
+        if self._ai_icon is not None and self._icon_before_design is not None and self.icon() == self._ai_icon:
+            self._select_icon(self._icon_before_design)
+        self._ai_icon = self._icon_before_design = None
+
+    def _stop_design_job(self):
+        """Cancel a running design request, if any. Returns whether there was one."""
+        if self._design_job is None:
+            return False
+        self._design_job.cancel()
+        self._design_job = None
+        self._set_designing(False)
+        return True
 
     def _set_designing(self, designing):
         self.design_button.setEnabled(not designing)
@@ -612,6 +635,11 @@ class CoverEditForm(QtWidgets.QDialog):
         except DesignError as error:
             self._set_status(redact(str(error)), error=True)
             return
+        except Exception as error:  # noqa: BLE001 - the GUI thread must survive; the text may hold a secret
+            log.warning('The AI designer could not be created (%s).', type(error).__name__)
+            self._set_status(translate('PortadasPlugin.EditForm', 'AI design is not available (could not start the '
+                                       'designer).'), error=True)
+            return
         hint = self.hint_edit.text()
         self._set_status(translate('PortadasPlugin.EditForm', 'Designing with the AI. This can take a minute...'))
         self._design_job = run_in_background(lambda: (cover, use_case.design(cover, hint)), self._design_done,
@@ -620,12 +648,8 @@ class CoverEditForm(QtWidgets.QDialog):
 
     def on_cancel_design(self):
         """Stop waiting for the AI: the request ends at its next checkpoint and its outcome is dropped."""
-        if self._design_job is None:
-            return
-        self._design_job.cancel()
-        self._design_job = None
-        self._set_designing(False)
-        self._set_status(translate('PortadasPlugin.EditForm', 'The AI design was cancelled.'))
+        if self._stop_design_job():
+            self._set_status(translate('PortadasPlugin.EditForm', 'The AI design was cancelled.'))
 
     def _design_done(self, outcome):
         if self._closed or self._design_job is None:
@@ -636,7 +660,10 @@ class CoverEditForm(QtWidgets.QDialog):
         self._custom_template_html = applied.custom_template_html
         self._set_designing(False)
         if designed.icon is not None:
+            if self._ai_icon is None or self.icon() != self._ai_icon:  # keep the user's icon, not an earlier AI one
+                self._icon_before_design = self.icon()
             self._set_custom_icon(applied.icon)
+            self._ai_icon = self.icon()
         self._show_ai_note()
         self._set_status(translate('PortadasPlugin.EditForm', 'The AI design is ready: {notes}').format(
             notes=redact(designed.notes)) if designed.notes else translate('PortadasPlugin.EditForm',

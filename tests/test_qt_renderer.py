@@ -427,7 +427,7 @@ def test_an_event_loop_ended_from_outside_raises_render_error_not_a_key_error(re
 
     with pytest.raises(RenderError, match='interrupted'):
         renderer.render(page(), TEMPLATE_DIR, size=(64, 36))
-    renderer.close()  # drop the job that is still running
+    assert not renderer._jobs  # the interrupted render's job was aborted, not left to live until its deadline
     QtCore.QCoreApplication.processEvents()
 
 

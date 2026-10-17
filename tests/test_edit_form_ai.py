@@ -256,3 +256,86 @@ def test_picking_a_template_after_a_design_drops_the_design(form, qtbot, designe
     form.template_list.setCurrentRow(1)
 
     assert form.values()['custom_template_html'] is None
+
+
+def test_an_unexpected_factory_error_shows_a_fixed_message_without_its_text(form, services, caplog):
+    def broken():
+        raise RuntimeError(f'boom {KEY}')
+    services.designer_factory = broken
+
+    form.on_design()  # must not raise out of the slot
+
+    assert form._design_job is None
+    text = form.status_label.text()
+    assert 'boom' not in text and KEY not in text
+    assert 'not available' in text
+    assert 'boom' not in caplog.text and KEY not in caplog.text
+    assert form.design_button.isEnabled()
+
+
+def test_the_status_label_is_plain_text(form):
+    from PyQt5 import QtCore
+    assert form.status_label.textFormat() == QtCore.Qt.PlainText
+    assert form.ai_note_label.textFormat() == QtCore.Qt.PlainText
+
+
+def test_picking_a_template_while_designing_cancels_the_job(form, qtbot, designer):
+    start_design(form, qtbot, designer)
+
+    form.template_list.setCurrentRow(1)
+    designer.gate.set()
+    qtbot.wait(200)
+
+    assert form._design_job is None
+    assert form.values()['custom_template_html'] is None
+    assert form.design_button.isEnabled() and form.cancel_design_button.isHidden()
+
+
+def test_clicking_the_selected_built_in_template_drops_the_design(form, qtbot, designer):
+    start_design(form, qtbot, designer)
+    finish_design(form, qtbot, designer)
+    assert form.values()['custom_template_html'] is not None
+
+    form.template_list.itemClicked.emit(form.template_list.currentItem())
+
+    assert form.values()['custom_template_html'] is None
+    assert form.ai_note_label.isHidden()
+
+
+def test_going_back_to_the_template_restores_the_uploaded_icon(form, qtbot, designer):
+    from contrib.plugins.portadas.domain.cover import IconRef
+    mine = IconRef(IconKind.INLINE_SVG, GOOD_SVG.replace('<path', '<path id="mine"'))
+    form._set_custom_icon(mine)
+    before = form.icon()
+    designer.proposal = type(designer.proposal)(
+        designer.proposal.template_html, GOOD_SVG.replace('<svg', '<svg data-ai="1"'), 'warm')
+    start_design(form, qtbot, designer)
+    finish_design(form, qtbot, designer)
+    assert form.icon() != before
+
+    form.use_template_button.click()
+
+    assert form.icon() == before
+    assert form.values()['custom_template_html'] is None
+
+
+def test_going_back_restores_a_built_in_icon_too(form, qtbot, designer):
+    before = form.icon()
+    start_design(form, qtbot, designer)
+    finish_design(form, qtbot, designer)
+    assert form.icon().kind is IconKind.INLINE_SVG
+
+    form.use_template_button.click()
+
+    assert form.icon() == before
+
+
+def test_a_manual_icon_choice_after_the_design_is_not_overwritten_by_going_back(form, qtbot, designer):
+    start_design(form, qtbot, designer)
+    finish_design(form, qtbot, designer)
+    form.icon_list.setCurrentRow(form.icon_list.count() - 1)
+    chosen = form.icon()
+
+    form.use_template_button.click()
+
+    assert form.icon() == chosen

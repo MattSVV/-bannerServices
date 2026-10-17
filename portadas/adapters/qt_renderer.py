@@ -400,7 +400,7 @@ class QtCoverRenderer(CoverRenderer):
             outcome['error'] = error
             loop.quit()
 
-        self.render_async(html, base_dir, done, failed, size)
+        job = self._start(html, base_dir, done, failed, size)
         if not outcome:
             waiter = (loop, outcome)
             self._waiting.append(waiter)
@@ -411,10 +411,14 @@ class QtCoverRenderer(CoverRenderer):
         if 'error' in outcome:
             raise outcome['error']
         if 'result' not in outcome:  # the event loop was ended from outside (for example by an application quit)
+            job.abort()  # nobody is waiting for it any more: do not let it live until its deadline
             raise RenderError('The render was interrupted before it finished.')
         return outcome['result']
 
     def render_async(self, html, base_dir, on_done, on_error, size=DEFAULT_SIZE):
+        self._start(html, base_dir, on_done, on_error, size)
+
+    def _start(self, html, base_dir, on_done, on_error, size):
         size = _check_size(size)
         if QtWidgets.QApplication.instance() is None:
             raise RenderError('No QApplication is running.')
@@ -422,6 +426,7 @@ class QtCoverRenderer(CoverRenderer):
             raise RenderError('The cover HTML is missing or larger than 2 MB.')
         job = _RenderJob(self, html, base_dir, size, on_done, on_error)
         self._jobs.add(job)
+        return job
 
     def close(self):
         """
