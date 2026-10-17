@@ -72,9 +72,9 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 
 ## Checklist
 
-- [ ] T01
-- [ ] T02
-- [ ] T03
+- [x] T01
+- [x] T02
+- [x] T03
 - [ ] T04
 - [ ] T05
 - [ ] T06
@@ -110,8 +110,17 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 
 | Task | Status | Commit | Evidence |
 |------|--------|--------|----------|
-| T01 | in progress | | |
+| T01 | done | `da600a0` | Structural readback of README, LICENSE (GPL-3.0 copied from OpenLP), `.gitignore`. Route: inline (1 mechanical doc unit). |
+| T02 | done | `aee17fc` | `scripts/check.sh`: ruff OK, 3 passed, coverage gate configurable (`COVERAGE_MIN`). Route: delegated writer (write trigger: 5 files). Assess tier: high (shell scripts, exec mode); independent verifier pending. |
+| T03 | done | `33fc722` | RED `ModuleNotFoundError contrib.plugins.portadas.portadasplugin`, then RED `KeyError 'portadas/status'`, then GREEN 3 passed. Runtime: `scripts/run-headless.sh`, exit 0, log `Loaded plugin <class 'contrib.plugins.portadas.portadasplugin.PortadasPlugin'>`, `Initialisation Complete for portadas`. Orchestrator spot check: `scripts/check.sh`, all checks passed. |
+
+## Findings carried forward
+
+- OpenLP imports the plugin as `contrib.plugins.portadas.portadasplugin`. Internal imports are relative. `tests/conftest.py` replicates this with a temp data dir.
+- Headless runs need a pre-seeded throwaway profile (`scripts/run-headless.sh`, `docs/testing.md`).
+- **Risk for T07:** QtWebEngine display windows time out under `QT_QPA_PLATFORM=offscreen`. xvfb is not installed. The renderer must work in the real app (hidden widget) and in tests; investigate in T07.
+- During T03 the writer's first unisolated run touched the user's real OpenLP profile. It created a backup conf and data dirs, and installed the dev symlink `~/.local/share/openlp/contrib/plugins/portadas`. This is harmless, and the user should know.
 
 ## Next step
 
-T01: README rewrite + license + `.gitignore`, then commit.
+T04: domain model and scripture reference parser (TDD). In parallel, an independent read-only verifier for T02/T03 scripts.

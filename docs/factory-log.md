@@ -16,4 +16,6 @@ One row per backlog task: how the factory executed it and what it cost. It is up
 
 | Task | Route | Delegations | Rework | Gate | Lines | Commit | Notes |
 |------|-------|-------------|--------|------|-------|--------|-------|
-| T01 | inline | 0 | 0 | structural readback | | | Repo bootstrap, README, license |
+| T01 | inline | 0 | 0 | structural readback | ~254 (excl. LICENSE) | `da600a0` | Repo bootstrap, README, license |
+| T02 | delegated | 1 (shared with T03) | 0 | check.sh pass (after T03) | 155 | `aee17fc` | Gate committed before any test existed |
+| T03 | delegated | 1 (shared with T02) | 1 (missing default setting found by runtime harness) | check.sh pass; headless harness OK | 385 | `33fc722` | Runtime harness caught a bug unit tests missed |
