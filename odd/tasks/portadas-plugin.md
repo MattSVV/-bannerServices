@@ -20,7 +20,7 @@ The church currently builds sermon covers by hand, outside OpenLP. The project i
 - OpenLP **3.1.8** (PyQt5, QtWebEngine). The plugin is loaded as a community plugin from `<DataDir>/contrib/plugins/portadas/`, with no fork of OpenLP.
 - Two modes: **templates** (deterministic) and **AI** (bring-your-own-key, provider-agnostic).
 - The AI designs an HTML/CSS template with placeholders. The text is always injected by our code, escaped, and never written by the AI.
-- Optional AI-generated background image (no text) for providers that support image generation.
+- ~~Optional AI-generated background image~~ removed by owner decision (2026-10-17): the AI designs HTML/CSS templates only.
 - Library tab, editor with live preview, add to service, PNG export (social media).
 
 ## Constraints
@@ -39,7 +39,7 @@ These are product defaults chosen so the overnight run does not block. Each one 
 2. Output is a 1920x1080 PNG, stored in `<DataDir>/portadas/`, with JSON metadata.
 3. There are 3 built-in templates. The first replicates the reference design "Noche dorada" (dark navy and gold).
 4. The icon is chosen from a bundled SVG set (hand-made, license-clean) or uploaded by the user (SVG/PNG). An AI template may draw its own inline SVG icon.
-5. AI providers: OpenAI, Anthropic, Google Gemini, and any OpenAI-compatible endpoint (custom base URL, e.g. Ollama or OpenRouter). Image backgrounds use OpenAI or Gemini.
+5. AI providers: OpenAI, Anthropic, Google Gemini, and any OpenAI-compatible endpoint (custom base URL, e.g. Ollama or OpenRouter).
 6. The API key lives in a dedicated per-user file with `0600` permissions, outside OpenLP settings exports. It is never logged and is masked in the UI. The OS keyring is not used because it is not in the dependency budget.
 
 ## Tasks
@@ -61,7 +61,7 @@ Legend: **[DEV]** development · **[SEC]** security · **[QA]** quality · **[TE
 | T11 | DEV/SEC | Settings tab and secret store: provider, model, base URL, masked API key, test connection, `0600` key file, log redaction | delegated writer |
 | T12 | DEV/TEST | AI port + provider adapters (OpenAI, Anthropic, Gemini, OpenAI-compatible): prompt builder, response parsing, timeouts/retries, background thread; mocked-HTTP tests | delegated writer |
 | T13 | DEV | AI mode in the editor: generate design → sanitize → preview → save | delegated writer |
-| T14 | DEV | Optional AI background image (OpenAI images / Gemini), referenced by the template as a local asset | delegated writer |
+| T14 | DEV | ~~Optional AI background image~~ DROPPED by owner decision (2026-10-17) | n/a |
 | T15 | SEC | Security review: threat model (`docs/security.md`), dependency and secret audit, independent `sdd-security` pass, fix confirmed findings | delegated reviewer + writer |
 | T16 | QA/TEST | Quality hardening: coverage threshold, manual E2E checklist (`docs/testing.md`), CI workflow (GitHub Actions + xvfb) ready for when a remote exists | delegated writer |
 | T17 | DEV/DOC | Packaging and install: release zip, install docs for Linux/Windows/macOS contrib paths, church upgrade guide to 3.1.8 | delegated writer |
@@ -91,7 +91,7 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T12b (AI adapter hardening, findings in `odd/findings/t12b-findings.md`)
 - [x] T12
 - [x] T13
-- [ ] T14 (blocked: open product/security decisions, see Progress table; nothing implemented)
+- [x] T14 dropped by owner decision (2026-10-17): the AI only designs HTML/CSS templates; no image generation
 - [x] T15 (review done; fixes tracked in T15a-T15c)
 - [x] T15a (MEDIUM fixes SEC-001..003)
 - [x] T15b (LOW fixes SEC-004..007 and T12c verifier lows)
@@ -150,7 +150,7 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 | T15c | done | `6e1420f`, `24f4701` | Route: delegated direct writer. TDD ON. RED: `ImportError DATA_NOTICE_KEY`; after adding the key the behaviours were specified by 11 tests (message boxes, tooltips, `has_search`, first-use notice). GREEN 142 focused. New `lib/dialogs.py` (`message_box` builds the `QMessageBox` with `PlainText`; `plain_tooltip` escapes because Qt has no plain tooltip mode). `has_search = False`: verified in `../openlp` that only the web API reads it and the base `search()` raises `NotImplementedError` (500). First *Design with AI* asks once (`confirm_data_use`, names the provider or host), persisted as `portadas/ai data notice accepted`; declining sends nothing. Docs: `docs/security.md` gained the T15 table, vector-art note, not-strictly-linear cost, settings-import redirect, Chromium 87 / `--disable-web-security` (`openlp/core/app.py:471`), and 3 upstream issues to report (verified: `mainwindow.py:923-949`, `settings.py:223`; the `.osz` name issue is taken from the review and was not re-verified). Nothing filed externally. Gate: `scripts/check.sh` 1432 passed, 97.50%, all checks passed. |
 | T15d | done | `dc3d588` | Reopened from T15: independent verification of 457eb59 (`odd/findings/t15d-findings.md`) found no critical, high or medium issue and 2 LOW plus INFO items. Route: delegated direct writer (write trigger: 14 files). TDD ON, runner `../openlp/.venv/bin/python -m pytest`. RED: `ImportError` for the new symbols, 5 failing `tests/test_key_origin.py` tests (stale key blocked), and the status-label test failed on the old code. GREEN 11 new tests. Fixes: (1) the first-use notice is bound to provider and server origin and kept in `<DataDir>/portadas/ai-notice.json` (private file, outside OpenLP settings, so an imported `.conf` cannot accept it; max 20 destinations; the old setting is ignored); (2) repair prompt lists at most 10 problems / 3,000 characters; (3) the "Designing..." status is cleared when a template pick stops the job; (4) `MAX_DECODE_BYTES` = 100,000,000 decoded bytes, 8 bytes per pixel at 16 bits per channel (measured peak: 195 MB for 25M px at 16 bits, 99 MB at 8 bits); (6) a key not tied to the configured server is dropped (request goes keyless, the log tells "another server" from "saved before server binding") instead of blocking a local keyless server; this changes the earlier SEC-003 behavior from refusing to sending no key, still never sending the stored key. Residuals documented in `docs/security.md`: findings 5 (data URI IHDR), 7, 8, 9, 10. Gate: `scripts/check.sh` 1445 passed, 97.45%, all checks passed (the first run segfaulted in QtWebEngine, two reruns passed). Two Spanish catalog entries changed (notice text) and one removed (message no longer shown). ~401+/45-. |
 | T19 | done | see git log | Factory log completed for T01..T15d with a summary section ("What the overnight run measured"); README "Status" rewritten. Route: inline (docs only). Gate: `scripts/check.sh` all checks passed. |
-| T14 | blocked | | Not implemented on purpose; needs the user's decisions first (see Next step). |
+| T14 | dropped | | Dropped by owner decision on 2026-10-17: only HTML/CSS templates designed by the AI, so image generation is out of scope. The unused *Generate AI background images* setting was removed; old settings files that still carry the key are ignored. Bundled `../../assets/backgrounds/` assets stay valid in the sanitizer. |
 
 ## Accepted changes
 
@@ -173,12 +173,8 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 
 ## Next step
 
-Everything except T14 is implemented, gated and independently verified. Remaining work needs the owner:
+The feature is complete: T14 was dropped by owner decision (2026-10-17), so the AI designs HTML/CSS templates only. Remaining work needs the owner:
 
-1. **T14 (AI background images) is blocked on product and security decisions that must not be guessed:**
-   - Where a generated image lives and how a template references it. The only allowed reference today is `../../assets/backgrounds/<file>`, inside the plugin package (not writable in a packaged install, wrong place for per-cover data). Options: (a) `<DataDir>/portadas/backgrounds/<cover id>.jpg` plus a fixed `{{background}}` placeholder that our code expands to a `file:` URL (widens the renderer's allowed roots by one directory and changes the sanitizer URL grammar); (b) a `data:` URI (needs raising `MAX_CUSTOM_TEMPLATE` / JSON limits; a 1080p JPEG is far above 150 KB).
-   - Provider and model ids for image generation (OpenAI images, Gemini) are unverified; they need a docs check and a cost statement. Confirm that image generation is wanted at all (extra cost, cover text goes in the prompt, unsuitable imagery on a church screen) and whether the settings checkbox *Generate AI background images* is the only consent.
-   - Lifecycle: delete the image with the cover; regenerate on edit or reuse.
-2. **Manual checks never done (cannot run headless or on this machine):** the GUI checklist in `docs/testing.md`; Windows and macOS runs (including the Windows ADS rule, finding 10); the CI workflow, which has never run (no remote); a native Spanish review of the catalog; a live provider test with real keys (default model ids are unverified).
-3. **Decisions to confirm:** the 6 overnight assumptions and the PR chain strategy (`stacked-to-main` or `feature-branch-chain`; there is no remote yet).
-4. Optional follow-ups: the documented residuals in `docs/security.md`, and upstream OpenLP issues listed there (nothing was filed).
+1. **Manual checks never done (cannot run headless or on this machine):** the GUI checklist in `docs/testing.md`; Windows and macOS runs (including the Windows ADS rule, finding 10); the CI workflow, which has never run (no remote); a native Spanish review of the catalog; a live provider test with real keys (default model ids are unverified).
+2. **Decisions to confirm:** the 6 overnight assumptions and the PR chain strategy (`stacked-to-main` or `feature-branch-chain`; there is no remote yet).
+3. Optional follow-ups: the documented residuals in `docs/security.md`, and upstream OpenLP issues listed there (nothing was filed).

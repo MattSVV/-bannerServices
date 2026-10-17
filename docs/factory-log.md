@@ -43,6 +43,7 @@ One row per backlog task: how the factory executed it and what it cost. It is up
 | T12b | delegated | shared | (rework of T12) | check.sh pass, 1270 tests | n/a | `ed06c00` | Deadlines, proxy env, template depth. Verified by the T20/T12b verify row (1 medium left) |
 | T13 | delegated | 1 (shared T13-T14) | 0 | check.sh pass, 1294 tests, 97.28%; headless OK | 569 | `2190cc5` | Editor AI mode; exceeded the 400 heuristic because tests (258) and docs are included |
 | T14 | delegated | shared | n/a | n/a | 0 | n/a | Stopped before coding: storage/reference design and image provider decisions are open (see feature doc) |
+| T14 (closure) | inline | 1 | 0 | check.sh pass | n/a | see git log | Dropped by owner decision 2026-10-17: the AI designs HTML/CSS templates only; the unused background setting was removed |
 | T20/T12b verify | delegated adversarial verifier | 1 | n/a | FAIL: 1 medium (trickled Content-Length body and headers bypass the budget), 4 low | 0 | n/a | Chunked trickle, depth, delimiters and store races held; findings in `odd/findings/t12c-findings.md` |
 | T12c | delegated | 1 | 0 | check.sh pass, 1302 tests, 97.18% | 435+/43- | `53b51d1` | RED: both trickle tests hit the 12 s test timeout on the old code. Watcher thread + tracked sockets; reworked after verification |
 | T13b | delegated | 1 | 0 | check.sh pass, 1309 tests, 97.18% | 152+/14- | `c59044b` | Rework of T13 after verification; also aborts the render job on an interrupted loop (T12c finding 7). Verified by the T15 review |
@@ -64,7 +65,7 @@ Window: first commit 2026-10-16 23:13, last code commit 2026-10-17 11:03 (about 
 | Measure | Value |
 |---------|-------|
 | Backlog tasks | 20 (T01-T20) plus 11 follow-up units opened by checks: T06b, T06c, T07b, T09b, T12b, T12c, T13b, T15a, T15b, T15c, T15d (T20 is an extra task found by the orchestrator) |
-| Done / blocked | All done except T14 (AI background images), stopped on purpose for product decisions |
+| Done / blocked | All done; T14 (AI background images) dropped by owner decision on 2026-10-17 |
 | Commits on the feature branch | 53 (14 `fix`, 12 `feat`, 21 `docs`, plus `test`, `ci`, `chore`, `build`) |
 | Tests | 3 (T02/T03) to 1445 at the last gate; about 1,440 added |
 | Coverage (gate layers, branch) | 96.2% at T06 to 97.45% at the last gate; the gate floor is 90% |

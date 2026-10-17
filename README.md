@@ -38,7 +38,7 @@ From OpenLP, the user fills in the sermon data, picks a template (or asks the AI
 | Mode | How it works |
 |------|--------------|
 | Templates | Built-in HTML/CSS templates. Deterministic, free, and offline. |
-| AI (bring your own key) | The user configures a provider (OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible endpoint) with their own API key. The AI designs an HTML/CSS template; it never writes the text. |
+| AI (bring your own key) | The user configures a provider (OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible endpoint) with their own API key. The AI creates a brand-new template with creative freedom (layout, colors, typography, decorative SVG), within the sanitizer rules. The text is always injected by our code, escaped; the AI never writes it. |
 
 ### Configuring AI
 
@@ -106,9 +106,9 @@ python3 -m venv ../openlp/.venv
 
 ## Status
 
-Feature-complete except one item. The overnight factory run built the library tab, the editor with live preview, the three built-in templates, PNG export, service integration, AI-designed templates (bring your own key), the sanitizer and sandboxed renderer, Spanish UI, packaging and the docs, with 1,445 tests at 97% coverage and independent security verification (see [`docs/security.md`](docs/security.md)).
+Feature-complete. The overnight factory run built the library tab, the editor with live preview, the three built-in templates, PNG export, service integration, AI-designed templates (bring your own key), the sanitizer and sandboxed renderer, Spanish UI, packaging and the docs, with 1,445 tests at 97% coverage and independent security verification (see [`docs/security.md`](docs/security.md)).
 
-- **Not built: T14, AI-generated background images.** It is blocked on product and security decisions that belong to the owner (where the image lives, which providers, cost and consent). See the feature document.
+- **AI scope (owner decision, 2026-10-17):** the AI designs HTML/CSS templates only. AI-generated background images (T14) were dropped.
 - **Manual checks still pending** (nothing here has been exercised by a human or on another platform):
   - the GUI checklist in [`docs/testing.md`](docs/testing.md) (adding a cover to the real service and showing it live);
   - Windows and macOS runs;
