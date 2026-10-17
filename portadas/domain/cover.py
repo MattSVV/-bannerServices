@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from .errors import DomainError
-from .scripture import Reference, parse_reference
+from .scripture import MAX_REFERENCE_CHARS, Reference, parse_reference
 
 DEFAULT_LABEL = 'MENSAJE'
 DEFAULT_READINGS_LABEL = 'LECTURAS'
@@ -36,6 +36,7 @@ MAX_LABEL = 40
 MAX_TITLE = 80
 MAX_SUBTITLE = 240
 MAX_READINGS = 12
+MAX_RAW_READINGS = 30  # raw reading lines accepted by ``from_raw`` before any parsing
 MAX_INLINE_SVG = 20000
 
 _SAFE_ID = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
@@ -110,6 +111,8 @@ def _clean_multiline(value, what, limit):
 def _as_reference(value, what):
     if isinstance(value, Reference):
         return value
+    if len(value) > MAX_REFERENCE_CHARS:
+        raise CoverError(f'{what}: a reference must be at most {MAX_REFERENCE_CHARS} characters.')
     try:
         return parse_reference(value)
     except DomainError as error:
@@ -175,6 +178,8 @@ class Cover:
             readings = readings.splitlines()
         lines = [(number, item) for number, item in enumerate(readings, 1)
                  if isinstance(item, Reference) or (item or '').strip()]
+        if len(lines) > MAX_RAW_READINGS:
+            raise CoverError(f'A cover can have at most {MAX_RAW_READINGS} readings.')
         verse = key_verse if isinstance(key_verse, Reference) or (key_verse or '').strip() else None
         return cls(
             id=uuid.uuid4().hex if id is None else id,

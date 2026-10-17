@@ -27,7 +27,9 @@ from contrib.plugins.portadas.domain.cover import (
     DEFAULT_ICON,
     DEFAULT_LABEL,
     DEFAULT_TEMPLATE_ID,
+    MAX_RAW_READINGS,
     MAX_READINGS,
+    MAX_REFERENCE_CHARS,
     Cover,
     CoverError,
     IconKind,
@@ -187,3 +189,35 @@ def test_from_raw_accepts_icon_parts_and_reference_objects():
     assert cover.icon.value == 'cross'
     assert str(cover.key_verse) == 'Salmos 23'
     assert str(cover.readings[0]) == 'Juan 3:16'
+
+
+# T06b: raw reference input is capped before any parsing happens.
+
+def test_raw_limits_match_the_documented_values():
+    assert (MAX_REFERENCE_CHARS, MAX_RAW_READINGS) == (200, 30)
+
+
+@pytest.mark.parametrize('field, value', [
+    ('key_verse', 'Juan ' + ' ' * 300 + '3:16'),
+    ('readings', ['Juan 3:16', 'Salmos ' + ' ' * 300 + '23']),
+    ('readings', 'Juan 3:16\n' + 'Salmos' + ' ' * 300 + '23'),
+])
+def test_from_raw_rejects_overlong_references_with_a_domain_error(field, value):
+    with pytest.raises(CoverError, match='at most 200 characters'):
+        Cover.from_raw(title_main='T', **{field: value})
+
+
+def test_from_raw_rejects_too_many_raw_readings_before_parsing():
+    readings = ['not a reference at all'] * (MAX_RAW_READINGS + 1)
+
+    with pytest.raises(CoverError, match='at most 30 readings'):
+        Cover.from_raw(title_main='T', readings=readings)
+
+
+def test_from_raw_rejects_a_flood_of_whitespace_quickly():
+    import time
+    started = time.perf_counter()
+    with pytest.raises(DomainError):
+        Cover.from_raw(title_main='T', key_verse='Juan ' + ' ' * 1_000_000 + 'x')
+
+    assert time.perf_counter() - started < 0.5

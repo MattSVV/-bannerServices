@@ -40,8 +40,9 @@ from .errors import ScriptureError
 PART_SEPARATOR = ' · '
 VERSE_SEPARATOR = ', '
 _MAX_NUMBER = 999
+MAX_REFERENCE_CHARS = 200  # a longer reference is refused before any parsing
 
-_BOOK_AND_REST = re.compile(r'^\s*(?P<book>(?:\d\s*)?[^\W\d_][^\d]*?)\s*(?P<rest>\d.*)?$', re.DOTALL)
+_DIGIT = re.compile(r'\d')
 _ITEM = re.compile(r'^(?:(?P<chapter>\d+)\s*:\s*)?(?P<first>\d+)(?:\s*-\s*(?P<last>\d+))?$')
 _PART_SPLIT = re.compile(r'[·;•]')
 
@@ -157,6 +158,31 @@ def _parse_parts(rest, original):
     return tuple(ChapterPart(chapter, tuple(verses), *rest_) for chapter, verses, *rest_ in parts)
 
 
+def _is_letter(char):
+    return char.isalnum() and not _DIGIT.match(char)
+
+
+def _split_book(text):
+    """
+    Split ``text`` into ``(book, rest)`` in a single left-to-right pass (no backtracking, so linear in its length).
+
+    The book is an optional leading digit, then a letter, then everything up to the first digit; ``rest`` starts at
+    that digit (``None`` when there is none). Returns ``None`` when the text does not start with a book name.
+    """
+    text = text.lstrip()
+    start = 0
+    if text and _DIGIT.match(text[0]):
+        start = 1
+        while start < len(text) and text[start].isspace():
+            start += 1
+    if start >= len(text) or not _is_letter(text[start]):
+        return None
+    end = start + 1
+    while end < len(text) and not _DIGIT.match(text[end]):
+        end += 1
+    return text[:end].rstrip(), text[end:] or None
+
+
 def parse_reference(text):
     """
     Parse and validate a reference such as ``'ef 6:11-12'``.
@@ -165,14 +191,16 @@ def parse_reference(text):
     """
     if not text or not text.strip():
         raise ScriptureError('The reference is empty.')
+    if len(text) > MAX_REFERENCE_CHARS:
+        raise ScriptureError(f'A reference must be at most {MAX_REFERENCE_CHARS} characters.')
     cleaned = text.replace('–', '-').replace('—', '-').replace('−', '-')
-    match = _BOOK_AND_REST.match(cleaned)
-    if not match:
+    parts = _split_book(cleaned)
+    if parts is None:
         raise ScriptureError(f'Invalid reference "{text.strip()}": it must start with a book name.')
-    book = find_book(match['book'])
-    if not match['rest']:
+    book, rest = find_book(parts[0]), parts[1]
+    if not rest:
         raise ScriptureError(f'Please give a chapter for {book.name}, for example "{book.name} 1:1".')
-    return Reference(book, _parse_parts(match['rest'], text))
+    return Reference(book, _parse_parts(rest, text))
 
 
 def format_reference(text):

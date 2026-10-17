@@ -60,6 +60,9 @@ Other notes:
 `tests/test_qt_renderer.py` renders real HTML to PNG and asserts pixels (size, background colour, text drawn), the
 overflow report, and the sandbox (remote and out-of-bounds URLs blocked, page JavaScript off).
 
+`tests/test_sanitizer_rendered.py` judges the template sanitizer by pixels: hostile pages whose only placeholder is hidden
+must render as a flat background once sanitized, and the same pages unsanitized must not (control). See `docs/security.md`.
+
 **Headless works.** QtWebEngine 5.15 renders correctly with `QT_QPA_PLATFORM=offscreen` and no extra flags: no Xvfb,
 no `--disable-gpu`, no `--no-sandbox`, no software-GL variables were needed on this machine. What it does need:
 

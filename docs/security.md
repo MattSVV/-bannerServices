@@ -1,0 +1,59 @@
+# Security
+
+## Sanitizer threat model
+
+Templates (and inline icons) written by an AI are **untrusted input**. They are rendered by QtWebEngine inside a
+sandbox (`portadas/adapters/qt_renderer.py`: no page JavaScript, request interceptor, one navigation, off-the-record
+profile) and, before that, rebuilt by the sanitizer (`portadas/security/html_policy.py` and `css_policy.py`). The
+sanitizer and the sandbox are two independent layers; a bypass of one must not be enough.
+
+Goals, in order of importance:
+
+1. **No script execution.** No `<script>`, event handlers, `javascript:` URLs, `<foreignObject>`, `<iframe>`, `<object>`,
+   SVG animation or any other element outside the allowlist.
+2. **No network or file access** beyond the plugin's own `assets` and `templates` folders: `url()` and `href` can only be
+   a `#fragment` or `../../assets/{fonts,backgrounds}/<file>`; no `@import`, `image-set()`, `src()`, `local()`.
+3. **The only visible text is the user's placeholder values.** A cover is shown to a congregation: the AI must not be
+   able to add words, numbers, bullets or symbols. This covers text nodes, SVG `<text>`, CSS `content`, list markers and
+   numbering, `quotes`, counters, `attr()` and strings smuggled through custom properties.
+4. **No re-expansion of user text.** Substitution is a single pass (`domain/templating.py`); `{{...}}` inside user text,
+   attributes, CSS or icons is never expanded or accepted.
+5. **Bounded cost.** Input is limited to 200 KB, 24 nesting levels and 5000 elements; the CSS tokenizer is linear and
+   limits bracket nesting; scripture references are capped at 200 characters and parsed in linear time.
+
+### How it is enforced
+
+- **HTML**: parsed with the standard library, rebuilt from an allowlist (never patched in place), so the output does not
+  depend on how a browser would have parsed the input. Every non-blank text node must be exactly one placeholder.
+- **CSS**: never inspected with regular expressions on a "normalised" copy (that approach was bypassed in T06b with
+  comment markers inside strings, escaped `\/*` and escaped quotes). Instead:
+  1. a tokenizer implementing CSS Syntax Module Level 3 reads the text the way Chromium does;
+  2. the tokens are validated against allowlists (at-rules, selectors, properties, functions, `url()` targets, strings);
+  3. the result is **re-serialized from the validated tokens**, tokenized again and compared with what was validated, so
+     what was checked is exactly what the browser will read, and sanitizing the output again changes nothing.
+  The allowlist is documented for authors in `docs/templates.md`.
+- **Strings** are the main way to inject text in CSS, so a string token survives only as a `font-family` name from a fixed
+  list, as `format("...")` in `@font-face`, or as the empty `content: ""`.
+- **Lists** would add markers or numbers: `<ol>` is removed and `* { list-style: none }` is forced first; `list-style*`
+  and `quotes` accept only `none`.
+- **Icons** (`sanitize_svg`): one `<svg>` root, SVG elements only, no text at all (not even a placeholder-looking one),
+  `style` attributes go through the same CSS policy.
+
+### Residual risks (accepted)
+
+- Rendering cost within the limits (many nested filters, patterns or `<use>` references) can slow a render; the renderer
+  has a timeout, and the user sees the failure instead of a hang.
+- A template can still look wrong or be unreadable (colours, sizes, overlapping boxes); the overflow report and the
+  preview exist for that. The sanitizer guarantees what it can show, not that it looks good.
+- The tokenizer follows the CSS Syntax specification, not a specific Chromium build. The rendered tests
+  (`tests/test_sanitizer_rendered.py`) are the check that both agree on the known attacks.
+
+### Tests
+
+- `tests/test_css_policy.py`: tokenizer cases, allowlists, idempotence and "no string outside the allowed contexts" over
+  generated hostile input.
+- `tests/test_sanitizer_bypasses.py`: every confirmed T06 finding as a regression (rejected, or neutralised with the
+  reported violation).
+- `tests/test_sanitizer_rendered.py`: real QtWebEngine, pixel based. Pages whose only placeholder is hidden must be flat
+  background after sanitizing; the same pages, unsanitized, must draw something (control, so the harness is known to see
+  the attack); the built-in templates must look identical before and after sanitizing.

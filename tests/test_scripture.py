@@ -19,10 +19,17 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>. #
 ##########################################################################
 """Spanish scripture reference parsing and formatting."""
+import time
+
 import pytest
 from contrib.plugins.portadas.domain.books import BOOKS, find_book
 from contrib.plugins.portadas.domain.errors import DomainError
-from contrib.plugins.portadas.domain.scripture import ScriptureError, format_reference, parse_reference
+from contrib.plugins.portadas.domain.scripture import (
+    MAX_REFERENCE_CHARS,
+    ScriptureError,
+    format_reference,
+    parse_reference,
+)
 
 # Every reading and key verse of the reference design (Portada@2x.png), as the design prints them.
 REFERENCE_DESIGN_STRINGS = [
@@ -159,3 +166,41 @@ def test_too_many_digits_are_rejected():
 def test_references_are_hashable_and_equal_by_value():
     assert parse_reference('Efesios 6:11') == parse_reference('ef 6:11')
     assert len({parse_reference('Efesios 6:11'), parse_reference('ef 6:11')}) == 1
+
+
+# T06b: the book/rest split used a regex with nested whitespace quantifiers (quadratic on long whitespace runs).
+
+@pytest.mark.parametrize('text', [
+    'Juan ' + ' ' * 100000 + 'x',
+    'Juan' + ' ' * 100000,
+    '1' + ' ' * 100000 + 'Juan',
+    'Juan ' + '\n' * 100000 + 'x',
+    'Juan' + ' 1' * 50000,
+    ' ' * 100000 + 'Juan 3:16',
+])
+def test_parsing_is_linear_on_long_whitespace_runs(text):
+    started = time.perf_counter()
+    with pytest.raises(ScriptureError):
+        parse_reference(text)
+
+    assert time.perf_counter() - started < 0.5
+
+
+def test_long_references_are_rejected_before_parsing():
+    assert MAX_REFERENCE_CHARS == 200
+    with pytest.raises(ScriptureError, match='at most 200'):
+        parse_reference('Juan 3:16' + ' ' * MAX_REFERENCE_CHARS)
+
+    assert str(parse_reference('Juan 3:16' + ' ' * 100)) == 'Juan 3:16'
+
+
+@pytest.mark.parametrize('text, expected', [
+    ('  Efesios   6:11', 'Efesios 6:11'),
+    ('1 Juan 1:9', '1 Juan 1:9'),
+    ('1Juan 1:9', '1 Juan 1:9'),
+    ('2  Corintios\t10:4-5', '2 Corintios 10:4-5'),
+    ('Salmos\n23', 'Salmos 23'),
+    ('Salmos 119:5,\n9', 'Salmos 119:5, 9'),
+])
+def test_the_linear_split_keeps_the_accepted_shapes(text, expected):
+    assert str(parse_reference(text)) == expected

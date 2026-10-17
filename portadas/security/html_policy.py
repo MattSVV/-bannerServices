@@ -29,8 +29,11 @@ Policy
       (``script``, ``iframe``, ``object``, ``embed``, ``link``, ``meta``, ``base``, ``form``, ``input``, ``a``,
       ``foreignObject``, ``image``, ``img`` without a bundled src, ...). Comments are removed.
     * Only allowlisted attributes survive. ``on*`` attributes are always dropped; ``href`` / ``xlink:href`` are kept
-      only as ``#fragment``; ``style`` attributes and ``<style>`` blocks must pass ``css_policy``; placeholders are
-      allowed in text and as ``{{empty_fields}}`` inside ``class``.
+      only as ``#fragment``; ``<style>`` blocks and ``style`` attributes are tokenized, validated and re-serialized by
+      ``css_policy`` (what survives is canonical CSS, never the original text); placeholders are allowed in text and as
+      ``{{empty_fields}}`` inside ``class``.
+    * Lists: ``<ol>`` is not allowed, and ``css_policy.BASE_CSS`` (``* { list-style: none }``) is emitted first, with
+      ``list-style*`` limited to ``none``, so no marker or number is ever drawn.
     * Limits: ``MAX_BYTES`` of input, ``MAX_DEPTH`` nesting levels, ``MAX_ELEMENTS`` elements.
     * **Text guarantee**: every non-whitespace text node must be exactly one content placeholder. A hard-coded visible
       string, or CSS ``content`` that could show one, makes the template unacceptable.
@@ -46,14 +49,22 @@ from html.parser import HTMLParser
 
 from ..domain.errors import DomainError
 from ..domain.templating import CONTENT_PLACEHOLDERS, EMPTY_FIELDS, TemplateError
-from .css_policy import ASSET_URL, CSS_CONTENT_TEXT, FRAGMENT_URL, check_css, normalise, url_problem
+from .css_policy import (
+    ASSET_URL,
+    BASE_CSS,
+    CSS_CONTENT_TEXT,
+    FRAGMENT_URL,
+    sanitize_declarations,
+    sanitize_stylesheet,
+    value_problem,
+)
 
 MAX_BYTES = 200 * 1024
 MAX_DEPTH = 24
 MAX_ELEMENTS = 5000
 
 HTML_TAGS = frozenset({
-    'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'br', 'hr', 'strong', 'em', 'b', 'i',
+    'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'li', 'br', 'hr', 'strong', 'em', 'b', 'i',
     'u', 'small', 'section', 'header', 'footer', 'main', 'article', 'aside', 'figure', 'figcaption', 'blockquote',
     'img'})
 SVG_TAGS = frozenset({
@@ -82,7 +93,6 @@ _HOOK_TOKEN = '{{' + EMPTY_FIELDS + '}}'
 _TEXT_PLACEHOLDER = re.compile(r'^\{\{\s*([A-Za-z0-9_]+)\s*\}\}$')
 _LANG = re.compile(r'^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$')
 _CONTROL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
-_PLAIN_FORBIDDEN = ('javascript:', 'vbscript:', 'data:', 'expression(', '{{')
 
 
 @dataclass(frozen=True)
@@ -240,15 +250,14 @@ class _Builder(HTMLParser):
     def _finish_style(self):
         css = ''.join(self._style).strip()
         self._style = None
-        problems = check_css(css)
-        if problems:
-            self._report_css(problems, 'A <style> block')
-        elif css:
-            self.styles.append(css)
+        result = sanitize_stylesheet(css)
+        self._report_css(result.problems, 'A <style> block')
+        if result.css and result.css != BASE_CSS:
+            self.styles.append(result.css)
 
     def _report_css(self, problems, what):
         for problem in problems:
-            self.report(problem.code, f'{what} was removed: {problem.message}', problem.code == CSS_CONTENT_TEXT)
+            self.report(problem.code, f'{what} was changed: {problem.message}', problem.code == CSS_CONTENT_TEXT)
 
     # --- attributes --------------------------------------------------------------------------------------------
     def _clean_attributes(self, tag, attrs, only=None):
@@ -272,11 +281,9 @@ class _Builder(HTMLParser):
         if name.startswith('on'):
             return None
         if name == 'style':
-            problems = check_css(value)
-            if problems:
-                self._report_css(problems, 'A style attribute')
-                return False
-            return value
+            result = sanitize_declarations(value)
+            self._report_css(result.problems, 'A style attribute')
+            return result.css or False
         if name == 'class':
             return _clean_class(value)
         if name == 'id':
@@ -298,8 +305,7 @@ def _clean_class(value):
 
 
 def _plain_value_ok(value):
-    text = normalise(value)
-    return not any(token in text for token in _PLAIN_FORBIDDEN) and url_problem(text) is None
+    return value_problem(value) is None
 
 
 # --- tree checks and serialisation ---------------------------------------------------------------------------
@@ -319,6 +325,18 @@ def _check_text(nodes, violations, found):
                 violations.append(Violation(
                     'hardcoded-text', f'Hard-coded text "{snippet}" is not allowed: every visible string must be a '
                     'placeholder.', True))
+        else:
+            nodes[index] = ' '
+
+
+def _check_no_text(nodes, violations):
+    """Icons carry no text at all, not even a placeholder-looking one (it would never be expanded, but is odd)."""
+    for index, node in enumerate(nodes):
+        if isinstance(node, _Element):
+            _check_no_text(node.children, violations)
+        elif node.strip():
+            violations.append(Violation('hardcoded-text', 'An icon must not contain text, not even a placeholder.',
+                                        True))
         else:
             nodes[index] = ' '
 
@@ -394,7 +412,7 @@ def sanitize_template(untrusted, required=('title_main',)):
                                         f'"{name}".', True))
     if any(violation.fatal for violation in violations):
         return SanitizeResult(None, tuple(violations))
-    styles = ''.join(f'<style>{css}</style>' for css in builder.styles)
+    styles = ''.join(f'<style>{css}</style>' for css in (BASE_CSS, *builder.styles))
     _trim(builder.root)
     document = (f'<!DOCTYPE html><html lang="{builder.html_lang or "es"}"><head><meta charset="utf-8">{styles}</head>'
                 f'<body{_attributes(builder.body_attrs)}>{_serialise(builder.root)}</body></html>')
@@ -425,8 +443,7 @@ def sanitize_svg(untrusted):
     if len(elements) != 1 or elements[0].tag != 'svg' or builder.top_level_removed:
         violations.append(Violation('missing-svg', 'An icon must be exactly one <svg> element.', True))
     else:
-        _check_text(elements[0].children, violations, set())
-        violations[:] = [v if v.code != 'hardcoded-text' else Violation(v.code, v.message, True) for v in violations]
+        _check_no_text(elements[0].children, violations)
     if any(violation.fatal for violation in violations) or not elements:
         return SanitizeResult(None, tuple(violations))
     return SanitizeResult(_serialise(elements), tuple(violations))
