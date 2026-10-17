@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" class="portadas-icon" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+  <path d="M8 46 L6 20 L20 32 L32 14 L44 32 L58 20 L56 46 Z"/>
+  <path d="M8 53 H56"/>
+  <circle cx="6" cy="17" r="2.2" fill="currentColor" stroke="none"/>
+  <circle cx="32" cy="11" r="2.2" fill="currentColor" stroke="none"/>
+  <circle cx="58" cy="17" r="2.2" fill="currentColor" stroke="none"/>
+</svg>

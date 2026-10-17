@@ -55,6 +55,7 @@ def test_reference_design_cover_round_trips_the_design_data():
     cover = reference_design_cover()
 
     assert cover.label == DEFAULT_LABEL == 'MENSAJE'
+    assert cover.readings_label == 'LECTURAS'
     assert cover.title_main == 'Resistir'
     assert cover.title_accent == 'al diablo'
     assert str(cover.key_verse) == 'Efesios 6:11'
@@ -119,6 +120,7 @@ def test_invalid_key_verse_is_reported():
     (dict(title_accent='x' * 81), 'at most 80'),
     (dict(subtitle='x' * 241), 'at most 240'),
     (dict(label='x' * 41), 'at most 40'),
+    (dict(readings_label='x' * 41), 'at most 40'),
     (dict(title_main='bad\x00title'), 'control'),
     (dict(title_main='bad‮title'), 'control'),
     (dict(readings=['Salmos 23'] * (MAX_READINGS + 1)), 'at most'),
@@ -146,6 +148,8 @@ def test_direct_construction_enforces_the_same_invariants():
 def test_label_blank_falls_back_to_default_in_from_raw():
     assert Cover.from_raw(title_main='T', label='  ').label == DEFAULT_LABEL
     assert Cover.from_raw(title_main='T', label='Serie').label == 'Serie'
+    assert Cover.from_raw(title_main='T', readings_label='  ').readings_label == 'LECTURAS'
+    assert Cover.from_raw(title_main='T', readings_label='Textos').readings_label == 'Textos'
 
 
 @pytest.mark.parametrize('kind, value', [

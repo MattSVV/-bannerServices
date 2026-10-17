@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" class="portadas-icon" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+  <path d="M32 3 L54 11 V31 C54 46 45 55 32 61 C19 55 10 46 10 31 V11 Z"/>
+  <path d="M32 8 L49 14 V31 C49 43 42 50 32 56 C22 50 15 43 15 31 V14 Z" stroke-width="0.6" opacity="0.5"/>
+  <path d="M32 44 C23 37 21 32 21 28 C21 24 24 22 27 22 C29.5 22 31 23.5 32 25.5 C33 23.5 34.5 22 37 22 C40 22 43 24 43 28 C43 32 41 37 32 44 Z" fill="currentColor" stroke="none"/>
+</svg>

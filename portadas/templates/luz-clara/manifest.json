@@ -1,0 +1,8 @@
+{
+  "id": "luz-clara",
+  "name": "Luz clara",
+  "description": "Light, warm cream background with a soft amber glow, dark brown text and bronze accents.",
+  "required": ["title_main"],
+  "optional": ["label", "title_accent", "subtitle", "key_verse", "readings_label", "readings", "icon"],
+  "canvas": { "width": 1920, "height": 1080 }
+}

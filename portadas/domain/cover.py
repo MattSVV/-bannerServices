@@ -30,6 +30,7 @@ from .errors import DomainError
 from .scripture import Reference, parse_reference
 
 DEFAULT_LABEL = 'MENSAJE'
+DEFAULT_READINGS_LABEL = 'LECTURAS'
 DEFAULT_TEMPLATE_ID = 'noche-dorada'
 MAX_LABEL = 40
 MAX_TITLE = 80
@@ -38,7 +39,7 @@ MAX_READINGS = 12
 MAX_INLINE_SVG = 20000
 
 _SAFE_ID = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
-_SLUG = re.compile(r'^[a-z0-9][a-z0-9-]{0,39}$')
+SLUG_PATTERN = re.compile(r'^[a-z0-9][a-z0-9-]{0,39}$')
 _UPLOAD_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$')
 
 
@@ -64,7 +65,7 @@ class IconRef:
             raise CoverError('The icon kind is not valid.')
         if not isinstance(self.value, str) or not self.value:
             raise CoverError('The icon needs a value.')
-        if self.kind is IconKind.BUILTIN and not _SLUG.match(self.value):
+        if self.kind is IconKind.BUILTIN and not SLUG_PATTERN.match(self.value):
             raise CoverError('The built-in icon name may only use lowercase letters, digits and hyphens.')
         if self.kind is IconKind.UPLOADED and not _UPLOAD_NAME.match(self.value):
             raise CoverError('The uploaded icon file name is not valid.')
@@ -127,14 +128,16 @@ class Cover:
     readings: tuple = ()
     icon: IconRef = DEFAULT_ICON
     template_id: str = DEFAULT_TEMPLATE_ID
+    readings_label: str = DEFAULT_READINGS_LABEL
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not isinstance(self.id, str) or not _SAFE_ID.match(self.id):
             raise CoverError('The cover id may only use letters, digits, "-" and "_" (1 to 64 characters).')
-        if not isinstance(self.template_id, str) or not _SLUG.match(self.template_id):
+        if not isinstance(self.template_id, str) or not SLUG_PATTERN.match(self.template_id):
             raise CoverError('The template id may only use lowercase letters, digits and hyphens.')
         self._check_text('label', self.label, MAX_LABEL, required=True)
+        self._check_text('readings label', self.readings_label, MAX_LABEL, required=True)
         self._check_text('main title', self.title_main, MAX_TITLE, required=True)
         self._check_text('accent title', self.title_accent, MAX_TITLE)
         self._check_text('subtitle', self.subtitle, MAX_SUBTITLE, multiline=True)
@@ -161,8 +164,9 @@ class Cover:
             raise CoverError(f'The {what} must be trimmed and free of blank lines or repeated spaces.')
 
     @classmethod
-    def from_raw(cls, title_main, *, label=None, title_accent=None, subtitle=None, key_verse=None, readings=(),
-                 icon=DEFAULT_ICON, template_id=DEFAULT_TEMPLATE_ID, id=None, created_at=None):
+    def from_raw(cls, title_main, *, label=None, readings_label=None, title_accent=None, subtitle=None,
+                 key_verse=None, readings=(), icon=DEFAULT_ICON, template_id=DEFAULT_TEMPLATE_ID, id=None,
+                 created_at=None):
         """
         Build a cover from raw user input: whitespace is normalised, blank optionals become ``None`` and
         references are parsed. Raises ``CoverError`` with a presentable message on any rule violation.
@@ -176,6 +180,7 @@ class Cover:
             id=uuid.uuid4().hex if id is None else id,
             title_main=_clean_line(title_main, 'main title', MAX_TITLE, required=True),
             label=_clean_line(label, 'label', MAX_LABEL) or DEFAULT_LABEL,
+            readings_label=_clean_line(readings_label, 'readings label', MAX_LABEL) or DEFAULT_READINGS_LABEL,
             title_accent=_clean_line(title_accent, 'accent title', MAX_TITLE),
             subtitle=_clean_multiline(subtitle, 'subtitle', MAX_SUBTITLE),
             key_verse=None if verse is None else _as_reference(verse, 'Key verse'),

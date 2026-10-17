@@ -1,0 +1,8 @@
+{
+  "id": "noche-dorada",
+  "name": "Noche dorada",
+  "description": "Dark navy background with a soft glow, gold accents and a serif title. Replica of the reference design.",
+  "required": ["title_main"],
+  "optional": ["label", "title_accent", "subtitle", "key_verse", "readings_label", "readings", "icon"],
+  "canvas": { "width": 1920, "height": 1080 }
+}

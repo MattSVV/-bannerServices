@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" class="portadas-icon" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">
+  <circle cx="32" cy="12" r="5"/>
+  <path d="M32 17 V57 M22 26 H42"/>
+  <path d="M10 40 C12 52 22 58 32 58 C42 58 52 52 54 40"/>
+  <path d="M10 40 L5 46 M10 40 L16 45 M54 40 L48 45 M54 40 L59 46"/>
+</svg>
