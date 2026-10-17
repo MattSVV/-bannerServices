@@ -22,9 +22,10 @@ from PyQt5 import QtCore, QtGui, QtSvg
 
 from ..application.icon_upload import MAX_PNG_DIMENSION
 from ..domain.cover import CoverError
-from ..security.html_policy import MAX_PNG_ICON_BYTES
+from ..security.html_policy import MAX_PNG_ICON_BYTES, sanitize_svg
 
 MAX_PNG_FILE_BYTES = 20 * 1024 * 1024  # an uploaded file is read only up to this size
+MAX_DECODE_PIXELS = 25_000_000  # an image announcing more pixels is refused before it is decoded (~100 MB as RGBA)
 ICON_SIDES = (256, 192, 128, 96, 64)  # an uploaded PNG is scaled down until it fits the size cap
 PICKER_SIZE = 64
 
@@ -42,8 +43,11 @@ def prepare_png_icon(path):
         raise CoverError(f'The image could not be read: {error.strerror or "I/O error"}.') from error
     if len(raw) > MAX_PNG_FILE_BYTES:
         raise CoverError('The image file is too large.')
+    announced = _announced_size(raw)
+    if announced is None or announced.width() * announced.height() > MAX_DECODE_PIXELS:
+        raise CoverError('The file is not a usable image.')
     image = QtGui.QImage.fromData(raw)
-    if image.isNull() or image.width() > 16384 or image.height() > 16384:
+    if image.isNull():
         raise CoverError('The file is not a usable image.')
     for side in ICON_SIDES:
         scaled = image
@@ -55,6 +59,18 @@ def prepare_png_icon(path):
     raise CoverError('The image is too complex to use as an icon; try a smaller or simpler one.')
 
 
+def _announced_size(raw):
+    """The size the image header announces, read without decoding the pixels; ``None`` when unreadable."""
+    buffer = QtCore.QBuffer()
+    buffer.setData(raw)
+    buffer.open(QtCore.QIODevice.ReadOnly)
+    reader = QtGui.QImageReader(buffer)
+    size = reader.size()
+    if not size.isValid() or size.width() <= 0 or size.height() <= 0:
+        return None
+    return size
+
+
 def _encode_png(image):
     buffer = QtCore.QBuffer()
     buffer.open(QtCore.QIODevice.WriteOnly)
@@ -64,10 +80,18 @@ def _encode_png(image):
 
 
 def svg_pixmap(svg_text, size=PICKER_SIZE, color='#555555'):
-    """Draw inline SVG markup on a transparent pixmap; ``currentColor`` becomes ``color``. Blank when unreadable."""
+    """
+    Draw inline SVG markup on a transparent pixmap; ``currentColor`` becomes ``color``. Blank when unreadable.
+
+    The markup is sanitised first (a stored icon could have been edited by hand): QtSvg would otherwise follow
+    ``<image href>`` to any local path, including ones that block forever. A rejected icon draws nothing.
+    """
     pixmap = QtGui.QPixmap(size, size)
     pixmap.fill(QtCore.Qt.transparent)
-    renderer = QtSvg.QSvgRenderer(QtCore.QByteArray(_qt_svg(svg_text, color).encode('utf-8')))
+    safe = sanitize_svg(svg_text, allow_png_image=True) if isinstance(svg_text, str) else None
+    if safe is None or not safe.accepted:
+        return pixmap
+    renderer = QtSvg.QSvgRenderer(QtCore.QByteArray(_qt_svg(safe.html, color).encode('utf-8')))
     if renderer.isValid():
         painter = QtGui.QPainter(pixmap)
         renderer.render(painter, QtCore.QRectF(0, 0, size, size))

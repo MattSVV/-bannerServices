@@ -26,6 +26,7 @@ a render finishes after the user kept typing, its result is dropped and a fresh 
 shows stale content for long and renders never pile up.
 """
 import logging
+import uuid
 from pathlib import Path
 
 from openlp.core.common.i18n import translate
@@ -36,6 +37,7 @@ from ..application.ports import RenderError, RepositoryError
 from ..domain.cover import DEFAULT_ICON, DEFAULT_TEMPLATE_ID, MAX_RAW_READINGS, MAX_READINGS, IconKind, IconRef
 from ..domain.errors import DomainError
 from ..domain.scripture import MAX_REFERENCE_CHARS, parse_reference
+from ..security.html_policy import sanitize_svg
 from .iconimage import MAX_PNG_FILE_BYTES, prepare_png_icon, svg_pixmap
 
 log = logging.getLogger(__name__)
@@ -61,6 +63,8 @@ class CoverEditForm(QtWidgets.QDialog):
         self._created_at = None
         self._loading = False
         self._busy = False
+        self._saving = False
+        self._closed = False
         self._preview_dirty = False
         self._preview_image = None
         self._custom_icon_item = None
@@ -282,6 +286,16 @@ class CoverEditForm(QtWidgets.QDialog):
 
     def _set_custom_icon(self, icon_ref):
         """Show a non-bundled icon (an upload) as the first entry of the picker and select it."""
+        if icon_ref.kind is IconKind.INLINE_SVG:
+            # A stored icon may have been edited by hand: keep only what passes the icon rules, or fall back.
+            safe = sanitize_svg(icon_ref.value, allow_png_image=True)
+            if not safe.accepted:
+                log.warning('The cover icon was rejected by the icon rules; using the default icon.')
+                self._set_status(translate('PortadasPlugin.EditForm', 'The cover icon is not valid and was replaced '
+                                           'by the default icon.'), error=True)
+                self._select_icon(DEFAULT_ICON)
+                return
+            icon_ref = IconRef(IconKind.INLINE_SVG, safe.html)
         if self._custom_icon_item is None:
             self._custom_icon_item = QtWidgets.QListWidgetItem()
             self._custom_icon_item.setText(translate('PortadasPlugin.EditForm', 'Uploaded'))
@@ -346,12 +360,14 @@ class CoverEditForm(QtWidgets.QDialog):
         self.preview_timer.start(self.preview_delay_ms)
 
     def _preview_due(self):
+        if self._closed:
+            return
         self._preview_dirty = True
         self._pump()
 
     def _pump(self):
         """Start the next render if none is running: the preview first, then the lazy template thumbnails."""
-        if self._busy:
+        if self._busy or self._saving or self._closed:
             return
         if self._preview_dirty:
             self._preview_dirty = False
@@ -376,6 +392,8 @@ class CoverEditForm(QtWidgets.QDialog):
             self._set_status(str(error), error=True)
 
     def _preview_done(self, result):
+        if self._closed:  # the dialog is gone: its widgets may already be deleted
+            return
         self._busy = False
         if self._preview_dirty:  # the user kept editing: this image is stale, draw the new one instead
             self._pump()
@@ -392,6 +410,8 @@ class CoverEditForm(QtWidgets.QDialog):
         self._update_buttons()
 
     def _preview_failed(self, error):
+        if self._closed:
+            return
         self._busy = False
         self._set_status(translate('PortadasPlugin.EditForm', 'The preview could not be rendered: {error}').format(
             error=error), error=True)
@@ -418,7 +438,7 @@ class CoverEditForm(QtWidgets.QDialog):
         self._scale_preview()
 
     def _update_buttons(self):
-        self.save_button.setEnabled(not self._busy)
+        self.save_button.setEnabled(not self._busy and not self._saving)
 
     # --- template thumbnails (lazy, one render at a time, cached for the session) ----------------------------------
     def _missing_thumbnails(self):
@@ -443,8 +463,10 @@ class CoverEditForm(QtWidgets.QDialog):
             self.services.template_thumbnails[template_id] = b''
 
     def _thumbnail_done(self, template_id, result):
-        self._busy = False
         self.services.template_thumbnails[template_id] = result.png_bytes if result is not None else b''
+        if self._closed:  # keep the cached image, but never touch the deleted widgets
+            return
+        self._busy = False
         for row in range(self.template_list.count()):
             item = self.template_list.item(row)
             if item.data(QtCore.Qt.UserRole) == template_id and result is not None:
@@ -500,22 +522,37 @@ class CoverEditForm(QtWidgets.QDialog):
 
     def on_save(self):
         """Validate, render and store the cover through the use case; close the dialog on success."""
-        if self._busy:
+        if self._busy or self._saving:
             return
-        cover, problem = self._first_problem()
-        if cover is None:
-            self.show_error(translate('PortadasPlugin.EditForm', 'The cover is not valid'), problem)
-            return
+        if self._cover_id is None:
+            self._cover_id = uuid.uuid4().hex  # one id per dialog: a repeated save replaces the cover, never copies it
+        self._saving = True
+        self.preview_timer.stop()
+        self._update_buttons()
         try:
-            created = self.services.creator.execute(**self.values())
-        except (DomainError, RenderError, RepositoryError) as error:
-            self.show_error(translate('PortadasPlugin.EditForm', 'The cover could not be saved'), str(error))
-            return
-        self.saved_cover = created.cover
-        self.accept()
+            cover, problem = self._first_problem()
+            if cover is None:
+                self.show_error(translate('PortadasPlugin.EditForm', 'The cover is not valid'), problem)
+                return
+            try:
+                created = self.services.creator.execute(**self.values())
+            except (DomainError, RenderError, RepositoryError) as error:
+                self.show_error(translate('PortadasPlugin.EditForm', 'The cover could not be saved'), str(error))
+                return
+            self.saved_cover = created.cover
+            self.accept()
+        finally:
+            self._saving = False
+            if not self._closed:
+                self._update_buttons()
+                if self._preview_dirty:
+                    self._pump()
 
     def done(self, result):
-        """Stop the timer so a late tick never starts a render for a closed dialog."""
+        """Stop the timer so a late tick never starts a render for a closed dialog; ignore Cancel while saving."""
+        if self._saving and result != QtWidgets.QDialog.Accepted:
+            return
+        self._closed = True
         self.preview_timer.stop()
         self._preview_dirty = False
         self._thumb_queue = []

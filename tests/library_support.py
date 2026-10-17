@@ -51,6 +51,7 @@ class FakeForm:
         self.save_as = save_as
         self.loaded = 'not called'
         self.saved_cover = None
+        self.deleted = False
 
     def load_cover(self, cover=None):
         self.loaded = cover
@@ -60,6 +61,9 @@ class FakeForm:
             return QtWidgets.QDialog.Rejected
         self.saved_cover = self.save_as
         return QtWidgets.QDialog.Accepted
+
+    def deleteLater(self):  # noqa: N802 - Qt API
+        self.deleted = True
 
 
 class Item(PortadasMediaItem):

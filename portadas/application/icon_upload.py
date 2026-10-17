@@ -27,6 +27,7 @@ is a reason to reject the file instead of silently cleaning it: it is most likel
 import base64
 import re
 import struct
+import zlib
 
 from ..domain.cover import CoverError, IconKind, IconRef
 from ..security.html_policy import MAX_PNG_ICON_BYTES, PNG_SIGNATURE, sanitize_svg
@@ -71,7 +72,7 @@ def icon_from_png_bytes(data):
         raise CoverError('The file is not a PNG image.')
     if len(data) > MAX_PNG_ICON_BYTES:
         raise CoverError(f'The PNG image is too large (at most {MAX_PNG_ICON_BYTES // 1024} KB).')
-    width, height = struct.unpack('>II', data[16:24])
+    width, height = _png_size(data)
     if not 0 < width <= MAX_PNG_DIMENSION or not 0 < height <= MAX_PNG_DIMENSION:
         raise CoverError(f'The PNG image has unsupported dimensions (at most {MAX_PNG_DIMENSION} pixels per side).')
     uri = 'data:image/png;base64,' + base64.b64encode(data).decode('ascii')
@@ -81,6 +82,32 @@ def icon_from_png_bytes(data):
     if not result.accepted or 'href="data:image/png' not in result.html:
         raise CoverError('The PNG image was rejected.')
     return IconRef(IconKind.INLINE_SVG, result.html)
+
+
+def _png_size(data):
+    """
+    Walk the chunks of ``data`` and return ``(width, height)``. The file must start with a well-formed ``IHDR`` and
+    end exactly after a valid ``IEND``: a truncated PNG, trailing bytes or a bad checksum is rejected.
+    """
+    position = len(PNG_SIGNATURE)
+    size = None
+    while position + 12 <= len(data):
+        length, kind = struct.unpack('>I4s', data[position:position + 8])
+        end = position + 12 + length
+        if end > len(data):
+            break
+        if zlib.crc32(data[position + 4:end - 4]) != struct.unpack('>I', data[end - 4:end])[0]:
+            raise CoverError('The PNG image is damaged (checksum mismatch).')
+        if size is None:
+            if kind != b'IHDR' or length != 13:
+                raise CoverError('The file is not a PNG image.')
+            size = struct.unpack('>II', data[position + 8:position + 16])
+        if kind == b'IEND':
+            if end != len(data):
+                raise CoverError('The PNG image has extra data after its end.')
+            return size
+        position = end
+    raise CoverError('The PNG image is incomplete.')
 
 
 def _blocking_problems(result):

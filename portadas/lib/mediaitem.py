@@ -271,10 +271,15 @@ class PortadasMediaItem(MediaManagerItem):
 
     def _edit(self, cover):
         form = self.create_edit_form()
-        form.load_cover(cover)
-        if form.exec() == QtWidgets.QDialog.Accepted and form.saved_cover is not None:
-            self._forget_thumbnail(form.saved_cover.id)
-            self.auto_select_id = form.saved_cover.id
+        try:
+            form.load_cover(cover)
+            accepted = form.exec() == QtWidgets.QDialog.Accepted and form.saved_cover is not None
+            saved = form.saved_cover
+        finally:
+            form.deleteLater()  # the dialog is parented to this item: without this every edit would leak one
+        if accepted:
+            self._forget_thumbnail(saved.id)
+            self.auto_select_id = saved.id
             self.load_list()
 
     def on_delete_click(self):
