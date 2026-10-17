@@ -19,11 +19,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>. #
 """Parsing a designer's reply and the ``DesignCoverWithAI`` use case, with fake designers (no network)."""
 import json
+import time
 
 import pytest
 from contrib.plugins.portadas.application.design_cover import DesignCoverWithAI
 from contrib.plugins.portadas.application.design_parse import parse_design_reply
-from contrib.plugins.portadas.application.ports import CoverDesigner, DesignError, DesignProposal
+from contrib.plugins.portadas.application.ports import CoverDesigner, DesignError, DesignProposal, UnusableReply
 from contrib.plugins.portadas.domain.cover import Cover, IconKind
 
 GOOD_HTML = ('<html><head><style>body{background:#123456;color:#fff}.title-main{font-size:90px}</style></head>'
@@ -247,3 +248,33 @@ def test_a_hostile_deeply_nested_reply_is_a_rejection_not_a_crash():
 
     with pytest.raises(DesignError, match='could not be made safe'):
         DesignCoverWithAI(designer).design(cover())
+
+
+# --- T15a / SEC-002: linear parsing and a reply cap ------------------------------------------------------------------
+
+def test_a_fence_followed_by_a_huge_run_of_spaces_is_parsed_in_linear_time():
+    started = time.perf_counter()
+    with pytest.raises(UnusableReply):
+        parse_design_reply('```' + ' ' * 200_000)
+
+    assert time.perf_counter() - started < 1.0
+
+
+@pytest.mark.parametrize('hostile', ['```a' * 60_000, '``` \n' * 40_000, '```' + '\n' * 200_000 + 'x'])
+def test_other_fence_shaped_inputs_stay_fast(hostile):
+    started = time.perf_counter()
+    with pytest.raises(UnusableReply):
+        parse_design_reply(hostile)
+
+    assert time.perf_counter() - started < 1.0
+
+
+def test_a_reply_beyond_the_cap_is_refused_before_parsing():
+    with pytest.raises(UnusableReply, match='too long'):
+        parse_design_reply(reply() + ' ' * 600_000)
+
+
+def test_the_second_fence_is_still_found_after_an_empty_one():
+    text = 'intro\n```\n```\nthen\n```json\n' + reply() + '\n```\nbye'
+
+    assert parse_design_reply(text).template_html == GOOD_HTML

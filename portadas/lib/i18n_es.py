@@ -96,7 +96,6 @@ UI = {
         'The cover icon is not valid and was replaced by the default icon.':
             'El icono de la portada no es válido y se reemplazó por el icono predeterminado.',
         'The cover is not valid': 'La portada no es válida',
-        'The image file is too large.': 'El archivo de imagen es demasiado grande.',
         'The preview appears here.': 'La vista previa aparece aquí.',
         'The preview could not be rendered: {error}': 'No se pudo generar la vista previa: {error}',
         'The saved API key could not be read. Enter it again in Settings > Configure OpenLP > Covers.':
@@ -304,6 +303,10 @@ MESSAGES = {
     'The SVG file is too large (at most {} KB).': 'El archivo SVG es demasiado grande (máximo %1 KB).',
     'The SVG file was rejected: {}': 'Se rechazó el archivo SVG: %1',
     'The file is not a PNG image.': 'El archivo no es una imagen PNG.',
+    'The icon must be a regular file.': 'El icono debe ser un archivo normal.',
+    'The file could not be read: {}.': 'No se pudo leer el archivo: %1.',
+    'The image file is too large.': 'El archivo de imagen es demasiado grande.',
+    'The file is not a usable image.': 'El archivo no es una imagen utilizable.',
     'The PNG image is too large (at most {} KB).': 'La imagen PNG es demasiado grande (máximo %1 KB).',
     'The PNG image has unsupported dimensions (at most {} pixels per side).':
         'La imagen PNG tiene dimensiones no admitidas (máximo %1 píxeles por lado).',
@@ -383,6 +386,7 @@ MESSAGES = {
     '{} refused to design this cover.': '%1 se negó a diseñar esta portada.',
     'The reply was empty.': 'La respuesta estaba vacía.',
     '{} The AI answered, but without a design.': '%1 La IA respondió, pero sin ningún diseño.',
+    'The AI reply is too long.': 'La respuesta de la IA es demasiado larga.',
     'The AI answered with an empty reply.': 'La IA respondió con una respuesta vacía.',
     'The AI provider returned an unusable answer.': 'El proveedor de IA devolvió una respuesta inutilizable.',
     'The AI reply is not valid JSON.': 'La respuesta de la IA no es un JSON válido.',

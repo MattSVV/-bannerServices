@@ -20,12 +20,32 @@
 ##########################################################################
 """Turns the text a model answered into a ``DesignProposal``. Tolerates code fences and chatter around the JSON."""
 import json
-import re
 
 from .ports import DesignProposal, UnusableReply
 
 MAX_NOTES = 1000
-_FENCE = re.compile(r'```[A-Za-z0-9_-]*\s*\n?(.*?)```', re.DOTALL)
+MAX_REPLY_CHARS = 512 * 1024  # a longer answer is refused before any parsing (a template is limited to 200 KB)
+_FENCE = '```'
+_LANGUAGE = frozenset('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-')
+
+
+def _fenced_blocks(text):
+    """The text between pairs of code fences, found with plain ``find`` calls (linear; a regex backtracked)."""
+    position = 0
+    while True:
+        opening = text.find(_FENCE, position)
+        if opening < 0:
+            return
+        start = opening + len(_FENCE)
+        while start < len(text) and text[start] in _LANGUAGE:  # the language tag
+            start += 1
+        while start < len(text) and text[start].isspace():
+            start += 1
+        closing = text.find(_FENCE, start)
+        if closing < 0:
+            return
+        yield text[start:closing]
+        position = closing + len(_FENCE)
 
 
 def parse_design_reply(text):
@@ -36,6 +56,8 @@ def parse_design_reply(text):
     """
     if not isinstance(text, str) or not text.strip():
         raise UnusableReply('The AI answered with an empty reply.')
+    if len(text) > MAX_REPLY_CHARS:
+        raise UnusableReply('The AI reply is too long.')
     data = _load_object(text)
     html = data.get('html', data.get('template_html'))
     if not isinstance(html, str) or not html.strip():
@@ -50,7 +72,7 @@ def parse_design_reply(text):
 
 def _load_object(text):
     candidates = [text.strip()]
-    candidates += [match.group(1).strip() for match in _FENCE.finditer(text)]
+    candidates += [block.strip() for block in _fenced_blocks(text)]
     start, end = text.find('{'), text.rfind('}')
     if 0 <= start < end:
         candidates.append(text[start:end + 1])
