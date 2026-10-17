@@ -11,8 +11,21 @@ Coverage is measured on `portadas/domain`, `portadas/application` and `portadas/
 covered by integration tests); the minimum is `COVERAGE_MIN`
 (default `90`).
 
-The venv needs the dev-only tools `pytest-cov` and `ruff` (`../openlp/.venv/bin/pip install pytest-cov ruff`).
-They are not plugin runtime dependencies.
+The venv needs the dev-only tools `pytest-cov`, `pytest-timeout` and `ruff`
+(`../openlp/.venv/bin/pip install pytest-cov pytest-timeout ruff`). They are not plugin runtime dependencies.
+
+### Hang guards
+
+- `pyproject.toml` sets `timeout = 60` and `timeout_method = "thread"` (pytest-timeout): a test that runs longer than
+  60 s dumps every thread's stack and the run aborts. The thread method is used because a signal-based timeout never
+  runs while the main thread is stuck inside Qt.
+- `scripts/check.sh` wraps pytest in `timeout` (`TESTS_TIMEOUT`, default 600 s; status 124 means it fired).
+- `tests/conftest.py` stops the run, naming the test, if a test leaves Qt's event loops dead. Never call
+  `QCoreApplication.exit()` or `quit()` in a test (not even from a watchdog timer): pytest-qt runs no
+  `QCoreApplication.exec`, so the "quit" flag is never cleared and every later `QEventLoop.exec` returns at once.
+  `qtbot.waitUntil` then spins creating signal proxies (about 150 000 in a minute), and destroying them is quadratic:
+  that was the intermittent suite hang (T20). Use a timer that closes the object under test instead (see the
+  `watchdog` fixture in `tests/test_qt_renderer.py`).
 
 ## How tests import the plugin
 

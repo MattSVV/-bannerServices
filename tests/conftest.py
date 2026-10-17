@@ -72,6 +72,31 @@ def community_module_name():
     return path_to_module(Path('plugins') / PLUGIN_NAME / f'{PLUGIN_NAME}plugin.py', community=True)
 
 
+def event_loops_alive():
+    """False when ``QEventLoop.exec`` returns at once because something called ``QCoreApplication.exit``."""
+    from PyQt5 import QtCore
+    loop, clock = QtCore.QEventLoop(), QtCore.QElapsedTimer()
+    QtCore.QTimer.singleShot(40, loop.quit)
+    clock.start()
+    loop.exec_()
+    return clock.elapsed() >= 20
+
+
+@pytest.fixture(autouse=True)
+def event_loops_stay_alive(request):
+    """
+    Stop the run at the first test that leaves Qt's event loops dead (T20).
+
+    ``QCoreApplication.exit()`` (or ``quit()``) sets a flag that only ``QCoreApplication.exec`` clears, and pytest-qt
+    never runs that: from then on every ``QEventLoop.exec`` returns immediately, ``qtbot.waitUntil`` spins creating
+    signal proxies by the hundred thousand and the suite appears to hang. Failing here names the culprit instead.
+    """
+    yield
+    if 'qapp' in request.fixturenames and not event_loops_alive():
+        pytest.exit(f'{request.node.nodeid} left the Qt event loops dead (QCoreApplication.exit/quit was called).',
+                    returncode=3)
+
+
 @pytest.fixture
 def openlp_env(qapp, tmp_path):
     """The bits of OpenLP's global state widgets need: a Registry holding a Settings object backed by a temp file."""

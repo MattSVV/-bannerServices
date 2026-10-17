@@ -12,6 +12,10 @@ dependencies = []
 testpaths = ["tests"]
 qt_api = "pyqt5"
 addopts = "-ra"
+# Hard guard (dev-only pytest-timeout): no single test may stall the gate. The thread method also works while the
+# main thread is stuck inside Qt, where a signal-based timeout would never run.
+timeout = 60
+timeout_method = "thread"
 
 [tool.coverage.run]
 # Gate on the pure layers only; adapters need Qt/OpenLP and are covered by integration tests.

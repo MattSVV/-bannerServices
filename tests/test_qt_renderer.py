@@ -37,6 +37,8 @@ from contrib.plugins.portadas.application.template_catalog import TemplateCatalo
 from contrib.plugins.portadas.domain.cover import Cover
 from contrib.plugins.portadas.domain.templating import render_cover
 
+from .conftest import event_loops_alive
+
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / 'portadas' / 'templates'
 PAGE = '<!DOCTYPE html><html><body style="margin:0;background:{background}">{body}</body></html>'
 
@@ -320,17 +322,36 @@ def test_concurrent_async_renders_do_not_mix_up_results(renderer, qtbot):
 
 # --- T07b regressions -------------------------------------------------------------------------------------------------
 
-def _watchdog(milliseconds=15000):
-    """Leave every event loop after a while, so a regression that hangs fails the test instead of the suite."""
+@pytest.fixture
+def watchdog(qapp):
+    """
+    ``arm(renderer, milliseconds)``: close the renderer after a while, so a regression that hangs fails the test.
+
+    It must never call ``QCoreApplication.exit``: with no ``QCoreApplication.exec`` running (pytest-qt never runs one)
+    that call leaves every later ``QEventLoop.exec`` returning at once, forever, and a timer left armed by a passing
+    test fired in a later one and hung the whole suite (T20). The timers are stopped when the test ends.
+    """
     from PyQt5 import QtCore
-    QtCore.QTimer.singleShot(milliseconds, QtCore.QCoreApplication.exit)
+    timers = []
+
+    def arm(renderer, milliseconds=15000):
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(renderer.close)
+        timer.start(milliseconds)
+        timers.append(timer)
+        return timer
+
+    yield arm
+    for timer in timers:
+        timer.stop()
 
 
-def test_closing_the_renderer_mid_render_raises_instead_of_hanging(qapp):
+def test_closing_the_renderer_mid_render_raises_instead_of_hanging(qapp, watchdog):
     from PyQt5 import QtCore
     local = QtCoverRenderer(timeout_ms=30000)
     QtCore.QTimer.singleShot(30, local.close)
-    _watchdog()
+    watchdog(local)
 
     with pytest.raises(RenderError, match='closed'):
         local.render(page(), TEMPLATE_DIR, size=(64, 36))
@@ -361,7 +382,7 @@ def test_a_4k_canvas_is_still_accepted():
     assert _check_size((2160, 3840)) == (2160, 3840)
 
 
-def test_a_grab_that_overshoots_the_deadline_fails_the_render(qapp, monkeypatch):
+def test_a_grab_that_overshoots_the_deadline_fails_the_render(qapp, monkeypatch, watchdog):
     import time
 
     from contrib.plugins.portadas.adapters import qt_renderer
@@ -376,7 +397,7 @@ def test_a_grab_that_overshoots_the_deadline_fails_the_render(qapp, monkeypatch)
         return len(calls) == 1  # the canary shows up, then disappears
 
     monkeypatch.setattr(qt_renderer._RenderJob, '_canary_visible', slow_grab)
-    _watchdog()
+    watchdog(local)
 
     with pytest.raises(RenderError, match='timed out'):
         local.render(page(), TEMPLATE_DIR, size=(64, 36))
@@ -397,3 +418,25 @@ def test_the_page_is_deleted_before_its_profile_after_a_failed_render(qapp):
         QtCore.qInstallMessageHandler(previous)
 
     assert not [message for message in messages if 'still not deleted' in message]
+
+
+def test_an_event_loop_ended_from_outside_raises_render_error_not_a_key_error(renderer):
+    """If something else ends the nested event loop of a blocking render, the caller gets a ``RenderError``."""
+    from PyQt5 import QtCore
+    QtCore.QTimer.singleShot(0, lambda: [loop.quit() for loop, _ in list(renderer._waiting)])
+
+    with pytest.raises(RenderError, match='interrupted'):
+        renderer.render(page(), TEMPLATE_DIR, size=(64, 36))
+    renderer.close()  # drop the job that is still running
+    QtCore.QCoreApplication.processEvents()
+
+
+def test_the_watchdog_leaves_the_event_loops_usable_after_it_fires(qapp, watchdog):
+    from PyQt5 import QtCore
+    local = QtCoverRenderer(timeout_ms=30000)
+    watchdog(local, 20)
+    loop = QtCore.QEventLoop()
+    QtCore.QTimer.singleShot(80, loop.quit)
+    loop.exec_()
+
+    assert event_loops_alive()

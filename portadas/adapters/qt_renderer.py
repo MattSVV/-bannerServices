@@ -410,6 +410,8 @@ class QtCoverRenderer(CoverRenderer):
                 self._waiting.remove(waiter)
         if 'error' in outcome:
             raise outcome['error']
+        if 'result' not in outcome:  # the event loop was ended from outside (for example by an application quit)
+            raise RenderError('The render was interrupted before it finished.')
         return outcome['result']
 
     def render_async(self, html, base_dir, on_done, on_error, size=DEFAULT_SIZE):

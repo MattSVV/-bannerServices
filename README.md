@@ -79,6 +79,8 @@ git clone https://gitlab.com/openlp/openlp.git ../openlp
 git -C ../openlp checkout 3.1.8
 python3 -m venv ../openlp/.venv
 ../openlp/.venv/bin/pip install -e "../openlp[test]" websocket-client
+# dev-only tools for the quality gate (not plugin dependencies)
+../openlp/.venv/bin/pip install pytest-cov pytest-timeout ruff
 # dbus-python and PyICU compile from source: on RHEL-family systems run
 #   sudo dnf install python3-devel libicu-devel dbus-devel gcc-c++
 ../openlp/.venv/bin/python ../openlp/run_openlp.py
