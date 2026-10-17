@@ -23,6 +23,7 @@ import json
 import pytest
 from contrib.plugins.portadas.adapters.secret_store import FileSecretStore
 from contrib.plugins.portadas.application.ai_config import AiConfig, origin_of
+from contrib.plugins.portadas.application.ports import DesignError
 from contrib.plugins.portadas.lib.ai_designer import make_designer
 from contrib.plugins.portadas.lib.ai_settings import BASE_URL_KEY, PROVIDER_KEY
 from contrib.plugins.portadas.security import redaction
@@ -116,34 +117,60 @@ def test_the_key_goes_to_the_server_it_was_entered_for():
     assert seen == [FAKE]
 
 
-@pytest.mark.parametrize('origins', [{}, {'openai_compatible': origin_of(EVIL)}], ids=['legacy', 'other server'])
-def test_the_key_is_never_sent_to_another_server(origins):
+def blocked_message(store, url=HOME):
     created = []
-    store = MemoryStore({'openai_compatible': FAKE}, origins=origins)
+    with pytest.raises(DesignError) as error:
+        make_designer(config(url), store, create=lambda cfg, key: created.append(key))
+    assert created == []  # nothing is built, so nothing is sent: neither with the key nor without it
+    return str(error.value)
 
-    make_designer(config(), store, create=lambda cfg, key: created.append(key))
 
-    assert created == [None]  # a keyless request: the stale key does not leave the machine and does not block
-
-
-def test_a_keyless_local_server_works_while_a_key_for_another_server_is_stored(caplog):
-    created = []
+def test_a_key_entered_for_another_server_blocks_the_design_and_names_the_configured_host():
     store = MemoryStore({'openai_compatible': FAKE}, origins={'openai_compatible': origin_of(EVIL)})
 
-    with caplog.at_level('WARNING'):
-        make_designer(config('http://localhost:11434/v1'), store, create=lambda cfg, key: created.append(key))
+    message = blocked_message(store)
 
-    assert created == [None] and FAKE not in caplog.text
-    assert 'another server' in caplog.text
+    assert 'entered for another server' in message and 'llm.example.org' in message
+    assert 'Settings > Configure OpenLP > Covers' in message
+    assert FAKE not in message and 'evil.example.net' not in message and 'https://' not in message
 
 
-def test_a_legacy_key_without_a_recorded_server_is_reported_differently_in_the_log(caplog):
-    store = MemoryStore({'openai_compatible': FAKE})
+def test_a_legacy_key_without_a_recorded_server_blocks_with_its_own_message():
+    message = blocked_message(MemoryStore({'openai_compatible': FAKE}))
 
-    with caplog.at_level('WARNING'):
-        make_designer(config(), store, create=lambda cfg, key: None)
+    assert 'before' in message and 'server' in message and 'llm.example.org' in message
+    assert 'entered for another server' not in message and FAKE not in message
+    assert 'Settings > Configure OpenLP > Covers' in message
 
-    assert 'before server binding' in caplog.text and FAKE not in caplog.text
+
+def test_the_two_blocking_messages_are_different():
+    other = blocked_message(MemoryStore({'openai_compatible': FAKE}, origins={'openai_compatible': origin_of(EVIL)}))
+    legacy = blocked_message(MemoryStore({'openai_compatible': FAKE}))
+
+    assert other != legacy
+
+
+def test_a_stored_key_for_another_server_blocks_even_a_local_keyless_address():
+    store = MemoryStore({'openai_compatible': FAKE}, origins={'openai_compatible': origin_of(EVIL)})
+
+    message = blocked_message(store, 'http://localhost:11434/v1')
+
+    assert 'localhost:11434' in message
+
+
+def test_entering_the_key_again_in_the_settings_tab_unblocks_the_design(make_tab):
+    store = MemoryStore({'openai_compatible': FAKE}, origins={'openai_compatible': origin_of(EVIL)})
+    blocked_message(store)
+    tab = make_tab(store)
+    tab.provider_combo.setCurrentIndex(tab.provider_combo.findData('openai_compatible'))
+    tab.base_url_edit.setText(HOME)
+    tab.api_key_edit.setText(NEW)
+
+    tab.save()
+
+    seen = []
+    make_designer(config(), store, create=lambda cfg, key: seen.append(key))
+    assert seen == [NEW]
 
 
 def test_a_server_that_needs_no_key_is_unaffected():
@@ -194,14 +221,19 @@ def test_an_imported_settings_file_cannot_redirect_a_saved_key(make_tab, openlp_
     openlp_env.setValue(BASE_URL_KEY, EVIL)
 
     created = []
-    make_designer(secret_store=store, create=lambda cfg, key: created.append(key))
+    with pytest.raises(DesignError):
+        make_designer(secret_store=store, create=lambda cfg, key: created.append(key))
 
-    assert created == [None]  # the redirected address never receives the key
+    assert created == []  # the redirected address receives neither the key nor a keyless request
 
 
-def test_test_connection_does_not_send_a_stored_key_to_another_server(make_tab, qtbot):
+@pytest.mark.parametrize('origins, wording', [
+    ({'openai_compatible': origin_of(HOME)}, 'entered for another server'),
+    ({}, 'before'),
+], ids=['other server', 'legacy'])
+def test_test_connection_is_blocked_with_the_message_and_the_configured_host(make_tab, qtbot, origins, wording):
     calls = []
-    store = MemoryStore({'openai_compatible': FAKE}, origins={'openai_compatible': origin_of(HOME)})
+    store = MemoryStore({'openai_compatible': FAKE}, origins=origins)
     tab = make_tab(store, test_connection=lambda cfg, key: calls.append(key) or 'Connected.')
     tab.provider_combo.setCurrentIndex(tab.provider_combo.findData('openai_compatible'))
     tab.base_url_edit.setText(EVIL)
@@ -209,7 +241,21 @@ def test_test_connection_does_not_send_a_stored_key_to_another_server(make_tab, 
     tab.test_button.click()
     qtbot.waitUntil(lambda: tab.test_button.isEnabled(), timeout=5000)
 
-    assert calls == [] and 'again' in tab.test_result_label.text() and FAKE not in tab.test_result_label.text()
+    text = tab.test_result_label.text()
+    assert calls == [] and FAKE not in text
+    assert wording in text and 'evil.example.net' in text and 'Settings > Configure OpenLP > Covers' in text
+
+
+def test_test_connection_without_any_stored_key_still_goes_out_keyless(make_tab, qtbot):
+    calls = []
+    tab = make_tab(MemoryStore(), test_connection=lambda cfg, key: calls.append(key) or 'Connected.')
+    tab.provider_combo.setCurrentIndex(tab.provider_combo.findData('openai_compatible'))
+    tab.base_url_edit.setText('http://localhost:11434/v1')
+
+    tab.test_button.click()
+    wait_for_result(qtbot, tab, tab.test_result_label.text())
+
+    assert calls == [None]
 
 
 def test_test_connection_names_the_destination_host_and_uses_a_typed_key(make_tab, qtbot):

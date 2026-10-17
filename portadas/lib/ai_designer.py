@@ -31,7 +31,14 @@ from openlp.core.common.i18n import translate
 from ..adapters.ai import create_designer
 from ..application.ai_config import COMPATIBLE, validate_base_url
 from ..application.ports import DesignError, SecretStoreError
-from .ai_settings import KEY_CHANGED, KEY_OK, default_secret_store, key_server_status, load_ai_config
+from .ai_settings import (
+    KEY_OK,
+    default_secret_store,
+    destination_label,
+    key_block_message,
+    key_server_status,
+    load_ai_config,
+)
 
 log = logging.getLogger(__name__)
 
@@ -41,9 +48,9 @@ def make_designer(config=None, secret_store=None, create=create_designer):
     :param config: an ``AiConfig``; defaults to the saved settings.
     :param secret_store: a ``SecretStore``; defaults to the per-user file store.
     :param create: the adapter factory (replaced in tests).
-    :raises DesignError: for an invalid server address or an unreadable key store. A key not tied to the
-        configured server is dropped (not sent); a missing key is reported by the designer itself when the request is
-        made, because OpenAI-compatible local servers need none.
+    :raises DesignError: for an invalid server address, an unreadable key store, or a stored key that is not tied
+        to the configured server (never sent, and never replaced by a keyless request). When no key is stored the
+        designer itself reports it when the request is made, because OpenAI-compatible local servers need none.
     """
     config = config or load_ai_config()
     if config.provider == COMPATIBLE:
@@ -62,11 +69,7 @@ def make_designer(config=None, secret_store=None, create=create_designer):
         status = key_server_status(store, config.base_url)[0]
         if status != KEY_OK:
             # The key was entered for another server (an imported settings file could have redirected it) or before
-            # keys were bound to a server. It is not sent, and it does not block: a server that needs no key (a local
-            # Ollama) keeps working, and one that does answers with its own error until the key is entered again.
-            if status == KEY_CHANGED:
-                log.warning('The saved API key was not sent: it was entered for another server.')
-            else:
-                log.warning('The saved API key was not sent: it was saved before server binding; enter it again.')
-            api_key = None
+            # keys were bound to a server. It is not sent, and no keyless request replaces it: the user must enter it
+            # again, which records the new server. A server that needs no key is unaffected when no key is stored.
+            raise DesignError(key_block_message(status, destination_label(config)))
     return create(config, api_key)

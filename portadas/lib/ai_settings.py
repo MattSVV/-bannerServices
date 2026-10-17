@@ -26,6 +26,7 @@ The API key is deliberately not here: it lives in the ``SecretStore`` so OpenLP'
 from urllib.parse import urlsplit
 
 from openlp.core.common.applocation import AppLocation
+from openlp.core.common.i18n import translate
 from openlp.core.common.settings import Settings
 
 from ..adapters.secret_store import FileSecretStore
@@ -99,6 +100,21 @@ def key_server_status(secret_store, base_url):
     if not saved:
         return KEY_UNBOUND, None
     return (KEY_OK if saved == wanted else KEY_CHANGED), saved
+
+
+def key_block_message(status, host):
+    """
+    The plain-text sentence shown when a stored key may not be sent to the server now configured (``host`` only).
+
+    The design and *Test connection* are blocked with it; they never fall back to a request without the key.
+    """
+    if status == KEY_UNBOUND:
+        return translate('PortadasPlugin.SettingsTab', 'The saved API key was saved before keys were tied to a '
+                         'server. The server now configured is {host}. Enter the API key again in Settings > '
+                         'Configure OpenLP > Covers.').format(host=host)
+    return translate('PortadasPlugin.SettingsTab', 'The saved API key was entered for another server. The server now '
+                     'configured is {host}. Enter the API key again in Settings > Configure OpenLP > Covers.'
+                     ).format(host=host)
 
 
 def destination_key(config):

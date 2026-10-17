@@ -44,7 +44,15 @@ from ..application.ai_config import (
 )
 from ..application.ports import DesignError, SecretStoreError
 from ..security.redaction import redact
-from .ai_settings import KEY_OK, KEY_UNBOUND, default_secret_store, key_server_status, load_ai_config, save_ai_config
+from .ai_settings import (
+    KEY_OK,
+    KEY_UNBOUND,
+    default_secret_store,
+    key_block_message,
+    key_server_status,
+    load_ai_config,
+    save_ai_config,
+)
 from .background import run_in_background
 from .dialogs import message_box
 from .i18n import localize
@@ -327,7 +335,7 @@ class PortadasSettingsTab(SettingsTab):
         state = self._server_state(provider)
         if api_key and not typed and state is not None and state[1] != KEY_OK:
             # The stored key belongs to another server (an imported settings file may have changed the address).
-            self.test_result_label.setText(self._saved_key_status(provider))
+            self.test_result_label.setText(key_block_message(state[1], state[0]))
             return
         self.test_button.setEnabled(False)
         if state is not None:

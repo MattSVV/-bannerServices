@@ -163,6 +163,15 @@ UI = {
         'The API key was not saved: it is empty, too short or long, or contains spaces or unsupported characters.':
             'No se guardó la clave de API: está vacía, es demasiado corta o larga, o contiene espacios o '
             'caracteres no admitidos.',
+        'The saved API key was entered for another server. The server now configured is {host}. Enter the API key '
+        'again in Settings > Configure OpenLP > Covers.':
+            'La clave de API guardada se escribió para otro servidor. El servidor configurado ahora es {host}. '
+            'Escriba la clave de API de nuevo en Configuración > Configurar OpenLP > Portadas.',
+        'The saved API key was saved before keys were tied to a server. The server now configured is {host}. Enter '
+        'the API key again in Settings > Configure OpenLP > Covers.':
+            'La clave de API guardada se almacenó antes de que las claves se asociaran a un servidor. El servidor '
+            'configurado ahora es {host}. Escriba la clave de API de nuevo en Configuración > Configurar OpenLP > '
+            'Portadas.',
         'The saved key is not tied to a server. Enter the key again for {host}.':
             'La clave guardada no está asociada a ningún servidor. Escriba la clave de nuevo para {host}.',
         'The saved key was entered for {saved}. Enter the key again for {host}.':
