@@ -19,7 +19,10 @@ Goals, in order of importance:
 4. **No re-expansion of user text.** Substitution is a single pass (`domain/templating.py`); `{{...}}` inside user text,
    attributes, CSS or icons is never expanded or accepted.
 5. **Bounded cost.** Input is limited to 200 KB, 24 nesting levels and 5000 elements; the CSS tokenizer is linear and
-   limits bracket nesting; scripture references are capped at 200 characters and parsed in linear time.
+   limits bracket nesting; scripture references are capped at 200 characters and parsed in linear time. Cost is bounded,
+   **not strictly linear**: T15 found three quadratic spots (distinct CSS problems, skipped-element lookups, prompt
+   delimiter stripping) that are now linear or capped, but the sanitizer and the renderer are not proven linear for
+   every input; the size limits, the render deadline and the AI reply cap (512 KB) are the real bounds.
 
 ### How it is enforced
 
@@ -39,7 +42,9 @@ Goals, in order of importance:
 - **Icons** (`sanitize_svg`): one `<svg>` root, SVG elements only, no text at all (not even a placeholder-looking one),
   `style` attributes go through the same CSS policy.
 - **Uploaded icons** (the editor's Upload button). These are the *user's own* files, never AI output, and they pass
-  `application/icon_upload.py` first. An SVG with active content (script, event handler, `foreignObject`, animation,
+  `application/icon_upload.py` first. A file is read only if it is a regular file (opened non-blocking, so a FIFO is
+  refused), and a "PNG" is trusted by its **content**, not its suffix: it must start with the PNG signature and have a
+  well-formed header and checksums before Qt sees it, and Qt is told to decode PNG only (SEC-001). An SVG with active content (script, event handler, `foreignObject`, animation,
   link), text or an embedded image is **rejected**, not silently cleaned; a clean one is stored as the sanitizer's
   rebuilt markup. A PNG is scaled down by the UI (at most 256 px, 96 KB), then wrapped in an SVG `<image>` with a
   `data:image/png;base64,` URI. Only `sanitize_svg(..., allow_png_image=True)` accepts that `<image>`: strict base64,
@@ -171,6 +176,9 @@ same allowlisted root the renderer's request filter already enforces.
   and plain SVG attribute values reject a bare `(` or `:`. `-webkit-line-clamp` is off the allowlist because the browser
   draws a hard-coded ellipsis. The rendered tests (`tests/test_sanitizer_rendered.py`) are the check that both agree.
 - `hyphens: auto` and `word-break` change how user text breaks into lines but add no text. They are accepted.
+- **Vector art can form words.** The "only the user's text is visible" rule is about text nodes and CSS text. An AI (or
+  an uploaded SVG) can still *draw* letters or numbers as paths. No sanitizer can tell a glyph-shaped path from a
+  decoration; the preview in the editor, which the user looks at before saving, is the control.
 
 ### Tests
 
@@ -181,3 +189,53 @@ same allowlisted root the renderer's request filter already enforces.
 - `tests/test_sanitizer_rendered.py`: real QtWebEngine, pixel based. Pages whose only placeholder is hidden must be flat
   background after sanitizing; the same pages, unsanitized, must draw something (control, so the harness is known to see
   the attack); the built-in templates must look identical before and after sanitizing.
+
+## T15 security review (2026-10-17)
+
+An independent read-only review of `efa6e78` found no CRITICAL or HIGH issue, 3 MEDIUM and 4 LOW (details in
+`odd/findings/t15-findings.md`). All were fixed in T15a-T15c:
+
+| ID | Fix |
+|----|-----|
+| SEC-001 | Uploaded icons are decoded by content (PNG signature and header first, PNG decoder only) and read only from regular files |
+| SEC-002 | The AI reply fence scan is a linear `find`, and replies over 512 KB are refused before parsing |
+| SEC-003 | The OpenAI-compatible key is bound to its server origin (see *Key bound to its server*) |
+| SEC-004 | The request interceptor blocks when the policy raises; the policy is total and refuses `:` after a Windows drive |
+| SEC-005 | Distinct CSS problems are deduplicated and capped (a sheet with more than 100 is dropped whole), skipped elements are counted, prompt delimiters are defused in one pass, the repair excerpt is 30,000 characters |
+| SEC-006 | Lone surrogates are rejected in cover text, templates and SVG; encoding errors become render or repository errors; the editor is never left busy |
+| SEC-007 | Log redaction is installed on the package the plugin is loaded as, not on a hard-coded name |
+
+Other changes from the review: message boxes and library tooltips show user and AI text as plain text (tooltips are
+escaped, because Qt has no plain mode for them); the library no longer advertises `has_search` (OpenLP's web API would
+call a `search` the plugin does not have and answer 500); and the first *Design with AI* asks once, naming the
+destination, before any text is sent (the answer is kept in the plugin settings as `portadas/ai data notice accepted`;
+declining sends nothing and asks again next time).
+
+### Settings import can redirect a key
+
+OpenLP's *Import settings* writes whatever a `.conf` file contains into the settings store, including
+`portadas/ai base url`. Before SEC-003 an imported file could therefore point the saved key at another server. The key
+is now tied to the origin it was entered for, so an imported address makes the key unusable (the user is asked to
+enter it again) instead of sending it. This protects the key, not the *text*: with a key typed again, or with a provider
+that needs no key, the cover text goes to whatever address is configured. Check the address in the Covers settings after
+importing a configuration from someone else.
+
+### The renderer runs under OpenLP's Chromium flags
+
+The renderer is a `QWebEnginePage` inside the OpenLP process, so it inherits the flags OpenLP gives the application:
+`--disable-web-security` (`openlp/core/app.py:471`). QtWebEngine 5.15 is based on Chromium 87, which no longer gets
+upstream security fixes. The plugin does not rely on the same-origin policy: JavaScript is off for the page, every
+sub-resource request goes through the interceptor (`security/request_policy.py`, fail closed), the page may navigate
+once, and the markup has been rebuilt by the sanitizer. The page is loaded with `setHtml`; how Chromium 87 treats such
+a document under `--disable-web-security` has not been characterised separately. If the browser engine ever gets
+a sandbox-escape fix that matters, update OpenLP/Qt rather than the plugin.
+
+### Report upstream (not filed)
+
+These are OpenLP issues found on the way. They are listed here to be reported to the OpenLP project; nothing has been
+filed from this repository.
+
+- The settings import checks the section name in `mainwindow.py:923-949` in a way that is a no-op (the `continue` only
+  skips the first loop; the second loop writes every key), so an imported file can write any key.
+- `.osz` service files: member names with path components are not rejected.
+- The web remote has authentication off by default (`api/authentication enabled: False`, `settings.py:223`), so anyone on the same network can control the service.
