@@ -32,3 +32,6 @@ One row per backlog task: how the factory executed it and what it cost. It is up
 | T06b re-verify | delegated adversarial verifier (resumed) | 1 | n/a | PASS, 2 low residuals | 0 | n/a | Resumed the same verifier to save context |
 | T09 | delegated | 1 (shared T09-T10) | 1 (OpenLP shortcut KeyError, ActionList test isolation) | check.sh pass, 913 tests | 2429 | `fa9eb62` | UI is the largest unit |
 | T10 | delegated | shared | 0 | check.sh pass, 934 tests; headless OK | 582 | `aeae46b` | Service reopen after delete tested |
+| T09-T10 verify | delegated adversarial verifier | 1 | n/a | FAIL: 2 editor defects + 2 low | 0 | n/a | Upload/AI isolation held |
+| T06c | delegated | 1 (shared T06c-T11) | (rework of T06b) | check.sh pass, 963 tests | 134 | `78996f6` | Low residuals |
+| T11 | delegated | shared | 1 (test fake) | check.sh pass, 1059 tests; headless OK | 1674 | `8c0b962` | Secrets + settings |

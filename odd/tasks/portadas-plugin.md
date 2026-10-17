@@ -84,8 +84,9 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T07b (reopened renderer/repository hardening)
 - [x] T09
 - [x] T10
-- [ ] T06c (low-severity sanitizer residuals)
-- [ ] T11
+- [x] T06c (low-severity sanitizer residuals)
+- [x] T11
+- [ ] T09b (editor defects from verification)
 - [ ] T12
 - [ ] T13
 - [ ] T14
@@ -124,7 +125,9 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 | T06b | done | `b955cb3` | Confirmed bypasses in `portadas/security/css_policy.py`: comment markers inside strings, escaped `\/*`, escaped quote in `content`, `list-style` strings, `<ol>` numbering, and super-linear scripture regex. Reason: an independent adversarial verification rendered the bypasses in real QtWebEngine. Fix: CSS Syntax L3 tokenizer + allowlist, `<ol>` removed, forced `list-style:none`, bundled fonts only, linear scripture parser with caps. RED 41+15 failing tests, then GREEN. Orchestrator spot check: 801 passed, 97.04%. Re-verification: all original payloads closed; 170 new CSS payloads and 4.42M fuzz runs gave 0 audit failures. 2 low residuals → T06c. |
 | T07b | done | `44d6c35` | Reason: independent T07/T08 verification. Fixed: `render()` hang after `close()`, FIFO hang (`O_NONBLOCK`), canvas cap plus post-grab deadline check, orphan PNG kept, no paths in user errors, JSON as commit marker, page deleted before profile. RED shown for each, then GREEN. Orchestrator spot check: 816 passed, 97.04%. Residual: soft render-time bound (documented). |
 | T09 | done | `fa9eb62` | RED: ImportError/ModuleNotFoundError plus 21 failing media item tests, then GREEN 913. Library tab, editor with debounced live preview, icon upload (SVG strict reject; PNG ≤96 KB wrapped as data-URI `<image>`, allowed only by `sanitize_svg(allow_png_image=True)`, never for AI). |
-| T10 | done | `aeae46b` | RED 18 failed with a stub, then GREEN 934. Image service items; reopening a service after the cover is deleted is tested. Runtime: `scripts/run-headless.sh` exit 0, `Portadas library loaded: 2 cover(s)`, 0 Portadas errors. Orchestrator spot check: 934 passed. GUI add-to-service/live is N/A headless; covered by the manual checklist in `docs/testing.md`. |
+| T10 | done | `aeae46b` | RED 18 failed with a stub, then GREEN 934. Image service items; reopening a service after the cover is deleted is tested. Runtime: `scripts/run-headless.sh` exit 0, `Portadas library loaded: 2 cover(s)`, 0 Portadas errors. Orchestrator spot check: 934 passed. GUI add-to-service/live is N/A headless; covered by the manual checklist in `docs/testing.md`. Independent verifier: upload and service paths held; **re-entrant Save duplicates covers, unsanitised picker SVG can hang, form leak, unbounded PNG decode** → T09b. |
+| T06c | done | `78996f6` | RED 17/29, then GREEN. `-webkit-line-clamp` dropped; `U+` unicode-range tokenized and refused; attribute values reject bare `(`/`:`. |
+| T11 | done | `8c0b962` | RED: ModuleNotFoundError ×4, then GREEN 1059. Secrets in `portadas/secrets/api-keys` (dir 0700, file 0600, atomic, DPAPI on Windows, mocked test), never in QSettings; log redaction filter; settings tab. Runtime: `Portadas settings tab created`, 0 errors. Orchestrator spot check: 1059 passed. Default model ids unverified → T12. |
 
 ## Accepted changes
 
@@ -146,4 +149,4 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 
 ## Next step
 
-T06c + T11 (settings tab + secret store) by one writer. In parallel, a verifier for T09/T10 (upload path, service integration).
+T09b (editor fixes) then T12 (AI port + provider adapters) by one writer. Then T13/T14.
