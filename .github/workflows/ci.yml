@@ -1,0 +1,61 @@
+# Quality gate for the Portadas plugin. NOTE: this repository has no remote yet, so this workflow has never run.
+# It was only validated as YAML (see docs/testing.md, "Continuous integration"). Expect to fix small things on the
+# first real run (apt package names, OpenLP's optional dependencies).
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OPENLP_VERSION: "3.1.8"
+  QT_QPA_PLATFORM: offscreen
+  # A renderer that cannot start must fail the build instead of skipping the pixel tests.
+  PORTADAS_REQUIRE_RENDER: "1"
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # scripts/check.sh expects OpenLP's interpreter at ../openlp/.venv/bin/python, a sibling of the repository.
+      - name: Check out the plugin
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install system libraries (Qt/QtWebEngine runtime, OpenLP build dependencies, Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libnss3 libxcomposite1 \
+            libxdamage1 libxrandr2 libxtst6 libasound2t64 libfontconfig1 \
+            build-essential pkg-config libdbus-1-dev libglib2.0-dev libicu-dev unixodbc-dev libmediainfo0v5
+
+      - name: Get OpenLP ${{ env.OPENLP_VERSION }} from source
+        run: git clone --depth 1 --branch "$OPENLP_VERSION" https://gitlab.com/openlp/openlp.git ../openlp
+
+      - name: Create OpenLP's virtual environment (with its test extras) and the dev-only tools
+        working-directory: ../openlp
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[test]"
+          .venv/bin/python -m pip install pytest-cov pytest-timeout ruff websocket-client
+
+      - name: Quality gate (ruff + pytest + coverage)
+        run: xvfb-run --auto-servernum scripts/check.sh
+
+      - name: Headless OpenLP smoke run and end-to-end cover flow
+        run: xvfb-run --auto-servernum scripts/run-headless.sh
