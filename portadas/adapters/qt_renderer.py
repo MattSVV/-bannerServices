@@ -47,7 +47,8 @@ PLUGIN_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_ROOTS = (PLUGIN_DIR / 'assets', PLUGIN_DIR / 'templates')
 DEFAULT_TIMEOUT_MS = 20000
 MAX_HTML_BYTES = 2 * 1024 * 1024  # QWebEnginePage.setHtml() refuses more than 2 MB
-MAX_SIDE = 7680
+MAX_SIDE = 3840  # the canvas is capped at 4K (3840x2160 pixels, in either orientation): grab() cannot be interrupted
+MAX_PIXELS = 3840 * 2160
 POLL_MS = 40
 GRAB_POLL_MS = 20
 PAINT_GRACE_POLLS = 25
@@ -199,6 +200,8 @@ def _check_size(size):
     for side in (width, height):
         if not isinstance(side, int) or isinstance(side, bool) or not 1 <= side <= MAX_SIDE:
             raise ValueError(f'Each side of the image must be a whole number from 1 to {MAX_SIDE}.')
+    if width * height > MAX_PIXELS:
+        raise ValueError(f'The image may not have more than {MAX_PIXELS} pixels (4K).')
     return width, height
 
 
@@ -217,7 +220,10 @@ class _RenderJob(QtCore.QObject):
         self._overflow = ()
 
         roots = tuple(renderer.roots) + (Path(base_dir),)
-        self._profile = QtWebEngineWidgets.QWebEngineProfile(self)  # no name: off the record, nothing on disk
+        self._clock = QtCore.QElapsedTimer()
+        self._clock.start()
+        # No name: off the record, nothing on disk. No parent either: it must outlive the page (see ``_finish``).
+        self._profile = QtWebEngineWidgets.QWebEngineProfile()
         self._profile.setHttpCacheType(QtWebEngineWidgets.QWebEngineProfile.NoCache)
         self._profile.setPersistentCookiesPolicy(QtWebEngineWidgets.QWebEngineProfile.NoPersistentCookies)
         self._interceptor = _Interceptor(roots)
@@ -236,7 +242,7 @@ class _RenderJob(QtCore.QObject):
 
         self._deadline = QtCore.QTimer(self)
         self._deadline.setSingleShot(True)
-        self._deadline.timeout.connect(lambda: self._fail(f'The render timed out while {self._stage}.'))
+        self._deadline.timeout.connect(self._timed_out)
         self._deadline.start(renderer.timeout_ms)
         self._page.loadFinished.connect(self._loaded)
         self._page.renderProcessTerminated.connect(
@@ -245,6 +251,18 @@ class _RenderJob(QtCore.QObject):
         self._stage = 'loading the page'
         base_url = QtCore.QUrl.fromLocalFile(str(Path(base_dir).resolve()) + '/')
         self._page.setHtml(html, base_url)
+
+    def _timed_out(self):
+        self._fail(f'The render timed out while {self._stage}.')
+
+    def _overdue(self):
+        """True (and the render is failed) when a synchronous step ran past the deadline the timer could not enforce."""
+        if self._finished:
+            return True
+        if self._clock.hasExpired(self._renderer.timeout_ms):
+            self._timed_out()
+            return True
+        return False
 
     def _loaded(self, ok):
         if self._finished:
@@ -298,7 +316,10 @@ class _RenderJob(QtCore.QObject):
         """Wait until a grab shows (``shown``) or no longer shows the canary, then continue the sequence."""
         if self._finished:
             return
-        if self._canary_visible() == shown or polls > CANARY_GRACE_POLLS:
+        visible = self._canary_visible()
+        if self._overdue():
+            return
+        if visible == shown or polls > CANARY_GRACE_POLLS:
             if shown:
                 self._run(_CANARY_OFF_JS, lambda _: self._await_canary(shown=False, polls=0))
             else:
@@ -311,6 +332,8 @@ class _RenderJob(QtCore.QObject):
             return
         self._stage = 'capturing the image'
         image = self._view.grab().toImage()
+        if self._overdue():
+            return
         if image.isNull():
             self._fail('The page could not be captured.')
             return
@@ -341,8 +364,11 @@ class _RenderJob(QtCore.QObject):
         self._renderer._forget(self)
         self._page.setHtml('')
         self._view.hide()
-        self._view.deleteLater()  # also deletes the page, which is its child
-        self._profile.deleteLater()
+        # Qt requires the page to be gone before its profile is released: delete the profile only once the page
+        # (a child of the view) has been destroyed.
+        profile, interceptor = self._profile, self._interceptor  # the closure keeps both alive until then
+        self._page.destroyed.connect(lambda *_: (profile.deleteLater(), interceptor))
+        self._view.deleteLater()
         self.deleteLater()
         callback, argument = (self._on_done, result) if error is None else (self._on_error, error)
         if result is None and error is None:
@@ -360,6 +386,7 @@ class QtCoverRenderer(CoverRenderer):
         self.roots = tuple(Path(root) for root in roots)
         self.timeout_ms = timeout_ms
         self._jobs = set()
+        self._waiting = []  # (loop, outcome) of every blocking ``render`` call in progress
 
     def render(self, html, base_dir, size=DEFAULT_SIZE):
         outcome = {}
@@ -375,7 +402,12 @@ class QtCoverRenderer(CoverRenderer):
 
         self.render_async(html, base_dir, done, failed, size)
         if not outcome:
-            loop.exec_()
+            waiter = (loop, outcome)
+            self._waiting.append(waiter)
+            try:
+                loop.exec_()
+            finally:
+                self._waiting.remove(waiter)
         if 'error' in outcome:
             raise outcome['error']
         return outcome['result']
@@ -390,7 +422,13 @@ class QtCoverRenderer(CoverRenderer):
         self._jobs.add(job)
 
     def close(self):
-        """Cancel renders in progress (their callbacks do not run) and release their resources."""
+        """
+        Cancel renders in progress and release their resources. Callbacks of ``render_async`` do not run; a blocking
+        ``render`` call waiting for its result raises ``RenderError``.
+        """
+        for loop, outcome in list(self._waiting):
+            outcome.setdefault('error', RenderError('The renderer was closed during the render.'))
+            loop.quit()
         for job in list(self._jobs):
             job.abort()
 

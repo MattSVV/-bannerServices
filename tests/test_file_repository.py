@@ -331,3 +331,95 @@ def test_export_to_a_missing_folder_or_a_directory_fails_cleanly(repo, tmp_path)
         repo.export_png('c1', tmp_path / 'missing' / 'out.png')
     with pytest.raises(RepositoryError):
         repo.export_png('c1', tmp_path, overwrite=True)
+
+
+# --- T07b regressions -------------------------------------------------------------------------------------------------
+
+def call_bounded(function, seconds=5):
+    """Run ``function`` in a daemon thread, so a regression that blocks on a FIFO fails instead of hanging."""
+    import threading
+    outcome = {}
+
+    def target():
+        try:
+            outcome['value'] = function()
+        except BaseException as error:  # noqa: B902 - handed back to the test thread
+            outcome['error'] = error
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    assert not thread.is_alive(), 'the repository call blocked on a named pipe'
+    if 'error' in outcome:
+        raise outcome['error']
+    return outcome['value']
+
+
+@pytest.mark.skipif(not hasattr(os, 'mkfifo'), reason='needs POSIX named pipes')
+def test_a_named_pipe_in_the_store_never_blocks_get_or_list(repo):
+    repo.save(make_cover('ok'), PNG)
+    os.mkfifo(repo.root / 'pipe.json')
+
+    with pytest.raises(CoverCorrupt):
+        call_bounded(lambda: repo.get('pipe'))
+    assert [cover.id for cover in call_bounded(repo.list)] == ['ok']
+
+
+def test_a_failed_save_keeps_a_pre_existing_orphan_png(repo, monkeypatch):
+    repo.root.mkdir(parents=True, exist_ok=True)
+    (repo.root / 'c1.png').write_bytes(PNG + b'orphan')
+    fail_second_replace(monkeypatch, 2)
+
+    with pytest.raises(RepositoryError):
+        repo.save(make_cover(), PNG)
+
+    assert (repo.root / 'c1.png').read_bytes() == PNG + b'orphan'
+    assert not (repo.root / 'c1.json').exists()
+
+
+def test_a_failed_save_leaves_no_temporary_files(repo, monkeypatch):
+    fail_second_replace(monkeypatch, 1)
+
+    with pytest.raises(RepositoryError):
+        repo.save(make_cover(), PNG)
+
+    assert list(repo.root.iterdir()) == []
+
+
+def test_user_facing_errors_do_not_leak_paths(repo, tmp_path, caplog):
+    corrupt(repo, 'broken', '{not json')
+    (repo.root / 'dir.json').mkdir()
+
+    for cover_id in ('broken', 'dir'):
+        with caplog.at_level(logging.WARNING), pytest.raises(CoverCorrupt) as caught:
+            repo.get(cover_id)
+        assert str(tmp_path) not in str(caught.value)
+        assert '/' not in str(caught.value)
+    assert any('dir' in record.getMessage() for record in caplog.records)
+
+
+def test_save_failures_do_not_leak_paths(repo, tmp_path, monkeypatch):
+    def refuse(*_):
+        raise PermissionError(13, 'Permission denied', str(repo.root / 'c1.png'))
+
+    monkeypatch.setattr(file_repository.os, 'replace', refuse)
+
+    with pytest.raises(RepositoryError) as caught:
+        repo.save(make_cover(), PNG)
+
+    assert str(tmp_path) not in str(caught.value)
+
+
+def test_the_json_is_the_commit_marker_of_a_save(repo, monkeypatch):
+    """A crash between the two renames leaves a PNG without JSON: the cover does not exist yet, nothing is listed."""
+    order = []
+    real = os.replace
+
+    def spy(source, target):
+        order.append(os.path.basename(target))
+        return real(source, target)
+
+    monkeypatch.setattr(file_repository.os, 'replace', spy)
+    repo.save(make_cover(), PNG)
+
+    assert order == ['c1.png', 'c1.json']

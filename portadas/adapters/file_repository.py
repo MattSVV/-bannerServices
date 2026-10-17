@@ -24,9 +24,12 @@
 * ids are validated against a strict pattern before they touch a path, so ``..``, separators, NUL bytes and absolute
   paths cannot reach outside ``root``;
 * writes go to a temporary file in the same folder and are moved into place with ``os.replace``; a failed save
-  restores the previous state;
-* stored files are opened without following symlinks and with a size limit;
-* unreadable entries are skipped by ``list`` with a logged warning.
+  restores the previous state. Both temporary files are written before either is moved, and the JSON is moved last:
+  it is the commit marker. A crash between the two moves leaves a new PNG next to the old JSON (the previous cover
+  with its newer image) or, for a new cover, a PNG without JSON, which ``list`` and ``get`` do not see as a cover;
+* stored files are opened without following symlinks, without blocking on named pipes and with a size limit;
+* unreadable entries are skipped by ``list`` with a logged warning;
+* messages in exceptions are safe to show to the user (no paths); details go to the log.
 """
 import logging
 import os
@@ -56,6 +59,7 @@ _ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
 # Windows refuses these file names (with any extension), so they are never valid ids.
 _RESERVED = {'con', 'prn', 'aux', 'nul'} | {f'com{n}' for n in range(1, 10)} | {f'lpt{n}' for n in range(1, 10)}
 _NO_FOLLOW = getattr(os, 'O_NOFOLLOW', 0)
+_NO_BLOCK = getattr(os, 'O_NONBLOCK', 0)  # opening a FIFO for reading would otherwise wait for a writer
 
 
 def _check_id(cover_id):
@@ -66,7 +70,7 @@ def _check_id(cover_id):
 
 def _read_regular(path, limit):
     """Read a regular file without following a symlink, refusing files larger than ``limit``."""
-    descriptor = os.open(path, os.O_RDONLY | _NO_FOLLOW)
+    descriptor = os.open(path, os.O_RDONLY | _NO_FOLLOW | _NO_BLOCK)
     with os.fdopen(descriptor, 'rb') as handle:
         info = os.fstat(handle.fileno())
         if not stat.S_ISREG(info.st_mode):
@@ -83,14 +87,29 @@ def _is_regular(path):
         return False
 
 
-def _atomic_write(path, data):
-    """Write ``data`` to ``path`` through a temporary file in the same folder, then ``os.replace``."""
+def _reason(error):
+    """The system's own wording for ``error`` (``No space left on device``), which never contains a path."""
+    return getattr(error, 'strerror', None) or 'input/output error'
+
+
+def _stage(path, data):
+    """Write ``data`` to a new temporary file next to ``path`` and return the temporary path."""
     temp = path.parent / f'.{path.name}.{uuid.uuid4().hex[:8]}.tmp'
     try:
         with open(temp, 'xb') as handle:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
+    return temp
+
+
+def _atomic_write(path, data):
+    """Write ``data`` to ``path`` through a temporary file in the same folder, then ``os.replace``."""
+    temp = _stage(path, data)
+    try:
         os.replace(temp, path)
     except BaseException:
         temp.unlink(missing_ok=True)
@@ -118,22 +137,27 @@ class FileCoverRepository(CoverRepository):
         if len(png_bytes) > MAX_PNG_BYTES:
             raise RepositoryError('The image is too large.')
         previous_png = None
+        staged = []
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            existed = json_path.exists()
-            if existed and _is_regular(png_path):
+            if _is_regular(png_path):  # also an orphan image without JSON: a failed save must give it back
                 previous_png = _read_regular(png_path, MAX_PNG_BYTES)
             png_written = False
             try:
-                _atomic_write(png_path, png_bytes)
+                staged.append(_stage(png_path, png_bytes))
+                staged.append(_stage(json_path, cover_to_json(cover).encode('utf-8')))
+                os.replace(staged[0], png_path)
                 png_written = True
-                _atomic_write(json_path, cover_to_json(cover).encode('utf-8'))
+                os.replace(staged[1], json_path)  # the commit marker
             except BaseException:
+                for temp in staged:
+                    temp.unlink(missing_ok=True)
                 if png_written:
                     self._restore_png(png_path, previous_png)
                 raise
         except OSError as error:
-            raise RepositoryError(f'The cover could not be saved: {error.strerror or error}') from error
+            log.warning('Could not save cover "%s": %s', cover.id, error)
+            raise RepositoryError(f'The cover could not be saved: {_reason(error)}.') from error
 
     @staticmethod
     def _restore_png(png_path, previous_png):
@@ -154,7 +178,8 @@ class FileCoverRepository(CoverRepository):
                 raise CoverNotFound(f'There is no cover "{cover_id}".') from None
             raise CoverCorrupt(f'The cover "{cover_id}" is incomplete.') from None
         except (OSError, CoverDataError, ValueError) as error:
-            raise CoverCorrupt(f'The cover "{cover_id}" cannot be read: {error}') from error
+            log.warning('Cover "%s" cannot be read: %s', cover_id, error)
+            raise CoverCorrupt(f'The cover "{cover_id}" cannot be read: it is damaged or unreadable.') from error
 
     def _load(self, cover_id):
         raw = _read_regular(self._json(cover_id), MAX_JSON_BYTES)
@@ -190,7 +215,8 @@ class FileCoverRepository(CoverRepository):
             json_path.unlink(missing_ok=True)  # first, so a half-finished delete never lists a cover without image
             png_path.unlink(missing_ok=True)
         except OSError as error:
-            raise RepositoryError(f'The cover could not be deleted: {error.strerror or error}') from error
+            log.warning('Could not delete cover "%s": %s', cover_id, error)
+            raise RepositoryError(f'The cover could not be deleted: {_reason(error)}.') from error
 
     def png_path(self, cover_id):
         path = self._png(cover_id)
@@ -217,4 +243,5 @@ class FileCoverRepository(CoverRepository):
                 dest.unlink(missing_ok=True)
                 raise
         except OSError as error:
-            raise RepositoryError(f'The cover could not be exported: {error.strerror or error}') from error
+            log.warning('Could not export cover "%s": %s', cover_id, error)
+            raise RepositoryError(f'The cover could not be exported: {_reason(error)}.') from error

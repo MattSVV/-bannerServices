@@ -43,6 +43,15 @@ Goals, in order of importance:
 
 - Rendering cost within the limits (many nested filters, patterns or `<use>` references) can slow a render; the renderer
   has a timeout, and the user sees the failure instead of a hang.
+- The render timeout is soft. Page layout and `QWidget.grab()` run synchronously on the GUI thread, and a timer cannot
+  interrupt them, so a pathological page can freeze the UI for longer than the timeout. The bound is therefore on the
+  work, not only on the clock: the canvas is capped at 3840x2160 pixels, the HTML at 2 MB, the sanitizer limits the CSS
+  and SVG complexity, and the renderer re-checks the deadline after every grab and fails the render if it was exceeded
+  (so a late image is never returned as a success). A page that blocks inside Chromium for a long time is still not
+  killed; only a separate render process would give a hard limit.
+- Saving a cover moves two files (PNG, then JSON, which is the commit marker). A crash between the two moves leaves the
+  previous cover with its newer image, or an invisible orphan PNG for a new cover; neither loses data. Error messages
+  shown to the user never contain file system paths; the details go to the log.
 - A template can still look wrong or be unreadable (colours, sizes, overlapping boxes); the overflow report and the
   preview exist for that. The sanitizer guarantees what it can show, not that it looks good.
 - The tokenizer follows the CSS Syntax specification, not a specific Chromium build. The rendered tests

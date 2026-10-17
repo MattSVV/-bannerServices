@@ -316,3 +316,84 @@ def test_concurrent_async_renders_do_not_mix_up_results(renderer, qtbot):
     qtbot.waitUntil(lambda: len(results) == 3, timeout=60000)
 
     assert [rgb(decode(results[name].png_bytes), 5, 5) for name in 'abc'] == [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
+
+
+# --- T07b regressions -------------------------------------------------------------------------------------------------
+
+def _watchdog(milliseconds=15000):
+    """Leave every event loop after a while, so a regression that hangs fails the test instead of the suite."""
+    from PyQt5 import QtCore
+    QtCore.QTimer.singleShot(milliseconds, QtCore.QCoreApplication.exit)
+
+
+def test_closing_the_renderer_mid_render_raises_instead_of_hanging(qapp):
+    from PyQt5 import QtCore
+    local = QtCoverRenderer(timeout_ms=30000)
+    QtCore.QTimer.singleShot(30, local.close)
+    _watchdog()
+
+    with pytest.raises(RenderError, match='closed'):
+        local.render(page(), TEMPLATE_DIR, size=(64, 36))
+
+
+def test_closing_the_renderer_does_not_run_async_callbacks(qapp):
+    from PyQt5 import QtCore
+    local = QtCoverRenderer(timeout_ms=30000)
+    calls = []
+    local.render_async(page(), TEMPLATE_DIR, calls.append, calls.append, size=(64, 36))
+    local.close()
+    loop = QtCore.QEventLoop()
+    QtCore.QTimer.singleShot(300, loop.quit)
+    loop.exec_()
+
+    assert calls == []
+
+
+@pytest.mark.parametrize('size', [(3841, 10), (10, 3841), (3840, 3840), (7680, 4320)])
+def test_the_canvas_is_capped_at_4k(renderer, size):
+    with pytest.raises(ValueError):
+        renderer.render(page(), TEMPLATE_DIR, size=size)
+
+
+def test_a_4k_canvas_is_still_accepted():
+    from contrib.plugins.portadas.adapters.qt_renderer import _check_size
+    assert _check_size((3840, 2160)) == (3840, 2160)
+    assert _check_size((2160, 3840)) == (2160, 3840)
+
+
+def test_a_grab_that_overshoots_the_deadline_fails_the_render(qapp, monkeypatch):
+    import time
+
+    from contrib.plugins.portadas.adapters import qt_renderer
+    local = QtCoverRenderer(timeout_ms=300)
+
+    calls = []
+
+    def slow_grab(self):
+        calls.append(1)
+        if len(calls) > 1:
+            time.sleep(0.6)  # a synchronous grab the timer cannot interrupt, right before the capture
+        return len(calls) == 1  # the canary shows up, then disappears
+
+    monkeypatch.setattr(qt_renderer._RenderJob, '_canary_visible', slow_grab)
+    _watchdog()
+
+    with pytest.raises(RenderError, match='timed out'):
+        local.render(page(), TEMPLATE_DIR, size=(64, 36))
+
+
+def test_the_page_is_deleted_before_its_profile_after_a_failed_render(qapp):
+    from PyQt5 import QtCore
+    messages = []
+    previous = QtCore.qInstallMessageHandler(lambda kind, context, message: messages.append(message))
+    try:
+        local = QtCoverRenderer(timeout_ms=1)
+        with pytest.raises(RenderError):
+            local.render(page(), TEMPLATE_DIR, size=(64, 36))
+        loop = QtCore.QEventLoop()
+        QtCore.QTimer.singleShot(1500, loop.quit)
+        loop.exec_()
+    finally:
+        QtCore.qInstallMessageHandler(previous)
+
+    assert not [message for message in messages if 'still not deleted' in message]
