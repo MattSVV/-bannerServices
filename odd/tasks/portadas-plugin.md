@@ -90,8 +90,8 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T20 (intermittent test-suite hang, found by orchestrator)
 - [x] T12b (AI adapter hardening, findings in `odd/findings/t12b-findings.md`)
 - [x] T12
-- [ ] T13
-- [ ] T14
+- [x] T13
+- [ ] T14 (blocked: open product/security decisions, see Progress table; nothing implemented)
 - [ ] T15
 - [ ] T16
 - [ ] T17
@@ -134,6 +134,8 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 | T12 | done | `9a21107` | Weak RED (import errors), then GREEN 1241, 97.2%. Port `CoverDesigner`, `DesignCoverWithAI` (one repair round), adapters for OpenAI, Anthropic, Gemini (key in header) and OpenAI-compatible; redirects refused; retries bounded; async test connection. Defaults the writer checked against provider docs on 2026-10-17: `claude-haiku-5-5`, `gpt-6-luna`, `gemini-3.5-flash-lite` (OpenAI JSON mode unconfirmed). No live provider test (no keys). Headless OK. |
 | T20 | done | `8fe4dc5` | Root cause: a leaked 15 s `QCoreApplication.exit` watchdog killed later `QEventLoop`s. 15/15 loop runs green. Orchestrator spot check: `scripts/check.sh` = 1270 passed, coverage 97.28%, all checks passed. Route: delegated direct writer; verifier pending. |
 | T12b | done | `ed06c00` | AI adapter hardening: total deadlines enforced, proxy env ignored, template depth bounded (findings in `odd/findings/t12b-findings.md`). Same orchestrator spot check as T20 (1270 passed, 97.28%). Route: delegated direct writer; verifier pending. |
+| T13 | done | `2190cc5` | RED: `ModuleNotFoundError ...lib.ai_designer` plus 17 failing editor tests (`hint_edit` etc. missing), then GREEN 70 focused tests; full gate `scripts/check.sh`: 1294 passed, coverage 97.28%, all checks passed; headless harness OK (0 Portadas errors). Editor AI mode: style hint, *Design with AI* (background job, busy state, *Cancel design*), template and icon applied through `DesignedCover.apply_to`, redacted errors, re-entrancy and late-callback guards, *Save* disabled while designing, picking a template drops the design. `lib/ai_designer.make_designer` wires settings and secret store to `create_designer`; `PortadasServices.designer_factory`. Route: delegated direct writer. No live provider test (no keys). |
+| T14 | blocked | | Not implemented on purpose; needs the user's decisions first (see Next step). |
 
 ## Accepted changes
 
@@ -156,4 +158,10 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 
 ## Next step
 
-T13 (editor AI mode) and T14 (optional AI background images) are in progress, then T15-T19. Ask the user to confirm the 6 overnight assumptions and the chain strategy (`stacked-to-main` or `feature-branch-chain`).
+T13 is done. T14 is blocked on product/security decisions that must not be guessed:
+
+1. **Where a generated image lives and how a template references it.** The only allowed reference today is `../../assets/backgrounds/<file>`, which resolves inside the plugin package (`portadas/assets/backgrounds/`), not writable in a packaged install and the wrong place for per-cover user data. Options: (a) a data dir `<DataDir>/portadas/backgrounds/<cover id>.jpg` plus a fixed `{{background}}` placeholder that our code expands to a `file:` URL, which widens the renderer's allowed roots by one directory and changes the sanitizer URL grammar; (b) embed as a `data:` URI, which needs raising `MAX_CUSTOM_TEMPLATE` / JSON limits (a 1080p JPEG is far above 150 KB).
+2. **Provider and model ids for image generation** (OpenAI images, Gemini) are not verified; they need a docs check and a cost statement. Confirm that image generation is wanted at all (extra cost per design, the cover text goes in the prompt, risk of unsuitable imagery on a church screen) and whether the existing settings checkbox *Generate AI background images* is the only consent.
+3. **Lifecycle:** delete the image with the cover; regenerate on edit or reuse.
+
+Then T15-T19. Also ask the user to confirm the 6 overnight assumptions and the chain strategy (`stacked-to-main` or `feature-branch-chain`).
