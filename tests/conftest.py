@@ -27,12 +27,22 @@ The fixtures below reproduce that scheme with a temporary data dir that holds a 
 to this repository's ``portadas`` package, so tests import the plugin exactly as OpenLP does.
 """
 import atexit
+import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
 
 import pytest
+
+# Qt tests run off screen unless the caller picks a platform (for example QT_QPA_PLATFORM=xcb on a real desktop).
+os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+try:
+    # QtWebEngine must be imported, and this attribute set, before any QApplication exists.
+    from PyQt5 import QtCore, QtWebEngineWidgets  # noqa: F401
+    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts)
+except ImportError:  # pure-Python tests still run without Qt
+    pass
 
 PLUGIN_NAME = 'portadas'
 REPO_ROOT = Path(__file__).resolve().parent.parent

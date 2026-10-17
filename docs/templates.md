@@ -20,6 +20,12 @@ Put `class="{{empty_fields}}"` on `<body>` and hide optional blocks with `body.n
 The hook is `no-` plus the placeholder name with `_` turned into `-` (`no-title-accent`, `no-key-verse`,
 `no-readings-label`). Placing a placeholder directly inside its element (no whitespace) also lets `:empty` work.
 
+## Overflow detection
+
+The renderer reports which fields do not fit by looking for elements whose CSS class is the placeholder name with `_`
+turned into `-` (`title-main`, `title-accent`, `subtitle`, `key-verse`, `label`, `readings-label`, `readings`). Give
+each field's element that class, as the built-in templates do.
+
 ## Assets
 
 Fonts are bundled (SIL OFL, licenses next to them) in `portadas/assets/fonts/` and referenced from a template as
