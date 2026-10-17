@@ -61,8 +61,12 @@ Goals, in order of importance:
   shown to the user never contain file system paths; the details go to the log.
 - A template can still look wrong or be unreadable (colours, sizes, overlapping boxes); the overflow report and the
   preview exist for that. The sanitizer guarantees what it can show, not that it looks good.
-- The tokenizer follows the CSS Syntax specification, not a specific Chromium build. The rendered tests
-  (`tests/test_sanitizer_rendered.py`) are the check that both agree on the known attacks.
+- The tokenizer follows the CSS Syntax specification, not a specific Chromium build, so "what is checked is what the
+  browser reads" holds for the known attacks, not as a proof. T06c closed the two known disagreements: unicode-range
+  tokens (`U+41url(...)`) are now one token and are refused everywhere (the `unicode-range` descriptor is dropped too),
+  and plain SVG attribute values reject a bare `(` or `:`. `-webkit-line-clamp` is off the allowlist because the browser
+  draws a hard-coded ellipsis. The rendered tests (`tests/test_sanitizer_rendered.py`) are the check that both agree.
+- `hyphens: auto` and `word-break` change how user text breaks into lines but add no text. They are accepted.
 
 ### Tests
 

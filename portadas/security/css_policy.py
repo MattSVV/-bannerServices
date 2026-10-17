@@ -120,7 +120,7 @@ outline-color outline-style outline-width outline-offset box-shadow transform tr
 transform-style perspective perspective-origin filter backdrop-filter mix-blend-mode isolation clip-path mask
 mask-image mask-position mask-repeat mask-size -webkit-mask -webkit-mask-image -webkit-mask-position
 -webkit-mask-repeat -webkit-mask-size -webkit-background-clip -webkit-text-fill-color -webkit-text-stroke
--webkit-text-stroke-color -webkit-text-stroke-width -webkit-line-clamp -webkit-box-orient fill fill-opacity fill-rule
+-webkit-text-stroke-color -webkit-text-stroke-width -webkit-box-orient fill fill-opacity fill-rule
 stroke stroke-width stroke-opacity stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset
 stroke-miterlimit stop-color stop-opacity flood-color flood-opacity clip-rule vector-effect paint-order
 """.split())
@@ -236,6 +236,8 @@ class _Tokenizer:
             if self.starts_ident(i + 1):
                 return Token('at', self.name())
             return Token('delim', '@')
+        elif char in 'uU' and self.starts_unicode_range(i):
+            return self.unicode_range()
         elif char == '\\' and self.valid_escape(i) or _name_start(char):
             return self.ident_like()
         self.i += 1
@@ -253,6 +255,10 @@ class _Tokenizer:
             nxt = self.at(index + 1)
             return _name_start(nxt) or nxt == '-' or self.valid_escape(index + 1)
         return self.valid_escape(index)
+
+    def starts_unicode_range(self, index):
+        """``U+`` followed by a hex digit or ``?`` begins a unicode-range token."""
+        return self.at(index + 1) == '+' and _is(self.at(index + 2), _HEX + '?')
 
     def starts_number(self, index):
         char = self.at(index)
@@ -308,6 +314,27 @@ class _Tokenizer:
                 while _digit(self.at(self.i)):
                     self.i += 1
         return self.s[start:self.i]
+
+    def unicode_range(self):
+        """Consume ``U+hhhhhh``, ``U+hh??`` or ``U+hhhh-hhhh`` as one token, as Chromium does."""
+        start = self.i
+        self.i += 2
+        digits = 0
+        while digits < 6 and _is(self.at(self.i), _HEX):
+            self.i += 1
+            digits += 1
+        wildcard = False
+        while digits < 6 and self.at(self.i) == '?':
+            self.i += 1
+            digits += 1
+            wildcard = True
+        if not wildcard and self.at(self.i) == '-' and _is(self.at(self.i + 1), _HEX):
+            self.i += 1
+            digits = 0
+            while digits < 6 and _is(self.at(self.i), _HEX):
+                self.i += 1
+                digits += 1
+        return Token('urange', self.s[start:self.i])
 
     def numeric(self):
         value = self.number()
@@ -445,7 +472,7 @@ def _text(token):
         return f'"{token.value}"'
     if kind == 'url':
         return f'url({token.value})'
-    if kind == 'number':
+    if kind in ('number', 'urange'):
         return token.value
     if kind == 'percent':
         return token.value + '%'
@@ -788,7 +815,8 @@ def value_problem(text):
     Return a message when the value of a plain (SVG presentation) attribute is unsafe, else ``None``.
 
     The value is tokenized like CSS: strings and non-fragment ``url()`` targets are refused, functions must be on the
-    allowlist and script-like schemes are searched in the decoded text.
+    allowlist, unicode-range tokens and bare ``(`` or ``:`` are refused, and script-like schemes are searched in the
+    decoded text.
     """
     if '{{' in text:
         return 'a placeholder in an attribute'
@@ -797,6 +825,8 @@ def value_problem(text):
     except CssSyntaxError:
         return 'the value could not be read'
     for token in tokens:
+        if token.kind in ('urange', '(', ':'):
+            return 'a character that is not part of a plain value'
         if token.kind == 'string':
             return 'a text string'
         if token.kind == 'url' and _url_problem(token.value):
