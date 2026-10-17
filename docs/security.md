@@ -46,6 +46,52 @@ Goals, in order of importance:
   at most 96 KB decoded, PNG signature, any other `href` dropped. `sanitize_template` has no such option, so AI
   templates can never carry an `<image>`. The stored icon is sanitised again with the option on every render.
 
+## API keys
+
+Bring-your-own-key means the plugin holds a credential for each AI provider the user configures. The design goals are
+that the key never appears in OpenLP's settings or their export, in logs, in the UI, or in a file other users can read.
+
+### How the key is stored (`portadas/adapters/secret_store.py`)
+
+- **Where.** `<OpenLP data>/portadas/secrets/api-keys`, a small JSON file `{"version": 1, "keys": {provider: key}}`.
+  Non-secret settings (provider, model, server address, timeout) stay in OpenLP `Settings` under `portadas/ai ...`.
+  Nothing secret is ever put in `Settings`, so *Export settings* and backups of `OpenLP.conf` do not contain keys.
+- **POSIX (Linux, macOS).** The directory is `0700` and the file `0600`. The file is written atomically: a private temp
+  file (`mkstemp`, mode `0600`, never readable by others even briefly) is flushed with `fsync` and renamed over the old
+  one, so a crash or a full disk leaves the previous content intact. When reading, the file is **refused** (a warning
+  without the key is logged and the key reads as absent) if it is a symlink, not a regular file, owned by another user,
+  or readable or writable by group or world. Writing replaces such a file with a private one.
+- **Windows.** The file content is encrypted with DPAPI (`CryptProtectData`, bound to the signed-in Windows user, no UI
+  prompt) via `ctypes`, so it is useless if copied to another account or machine. The DPAPI code path is unit-tested on
+  every platform with a mocked crypt API.
+- **Keyring.** The OS keyring is not used: it needs a dependency OpenLP does not ship (see the dependency budget).
+- **UI.** The key field is a password field. A stored key is never shown again: the field stays empty and says
+  "saved". Removing it takes **Clear** and then **OK** (Cancel keeps it). A key typed for one provider is dropped when
+  the user switches provider, so it can never be saved under the wrong one.
+- **Server address.** For OpenAI-compatible servers only `https://` is accepted, plus `http://` to `localhost`,
+  `127.0.0.1` or `::1`. User names and passwords in the URL, queries and fragments are refused, because URLs end up in
+  logs and error messages.
+
+### Log redaction (`portadas/security/redaction.py`)
+
+A filter is installed on the `contrib.plugins.portadas` logger hierarchy when the plugin loads. Every record is rewritten
+(message, arguments, traceback) so that the exact keys the secret store has handled in this process, and anything shaped
+like an OpenAI/Anthropic/Gemini key, a bearer token or an `x-api-key` header, becomes `[redacted]` before any handler
+(OpenLP's log file, the console) sees it. Error messages from the connection test go through the same function.
+Code must still never log a key on purpose; the filter is the safety net for accidents such as an exception message or a
+request URL (Gemini accepts `?key=`).
+
+### Threat model for keys
+
+| Threat | Mitigation | Residual |
+|--------|------------|----------|
+| Another local user reads the key | `0700`/`0600`, refused if loose, DPAPI on Windows | root/administrator can read it |
+| Key leaks through a settings export, a support upload or a backup of `OpenLP.conf` | Keys are not in `Settings` | A backup of the whole data folder includes the secrets file; treat it like `~/.ssh` |
+| Key leaks into `openlp.log` | Redaction filter, no deliberate logging | A key of an unknown shape that was never stored here cannot be recognised |
+| Symlink or file swapped by another user | `lstat` checks, ownership check, atomic rename | A time-of-check race by the same user is not defended |
+| Malware running as the same user | None: any program that can run the plugin can read what the plugin can read | Accepted. Use provider-side spending limits and revoke leaked keys |
+| Shoulder surfing | Password echo mode, key never shown again | A key can be seen while being typed if the user reveals it with the OS |
+
 ### Residual risks (accepted)
 
 - Rendering cost within the limits (many nested filters, patterns or `<use>` references) can slow a render; the renderer

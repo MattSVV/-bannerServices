@@ -55,6 +55,7 @@ if grep -nEi 'Failed to import|(ERROR|CRITICAL).*portadas|File ".*portadas' "$lo
 fi
 grep -qE 'Loaded plugin .*PortadasPlugin' "$log"
 grep -qE 'initialising plugins portadas in a True state' "$log"
+grep -qE 'Portadas settings tab created' "$log" || { echo "the settings tab was not created" >&2; exit 1; }
 # The library tab must have listed the seeded covers and built a thumbnail for each.
 grep -qE 'Portadas library loaded: 2 cover\(s\)' "$log" || { echo "the library tab did not list the 2 seeded covers" >&2; exit 1; }
 thumbnails="$(find "$XDG_DATA_HOME/openlp/portadas/thumbnails" -name '*.png' 2>/dev/null | wc -l)"

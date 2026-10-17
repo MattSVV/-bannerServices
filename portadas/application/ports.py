@@ -135,3 +135,33 @@ class CoverRepository(ABC):
 
         :raises CoverNotFound: when there is no such cover.
         """
+
+
+class SecretStoreError(Exception):
+    """The secret store could not be read or written. The message is presentable and never contains a key."""
+
+
+class SecretStore(ABC):
+    """Keeps one API key per AI provider, apart from OpenLP's settings so exports and backups never contain them."""
+
+    @abstractmethod
+    def get_api_key(self, provider):
+        """
+        Return the stored key for ``provider``, or ``None`` when there is none or the store cannot be trusted
+        (for example a file that other users can read). Never logs a key.
+
+        :raises ValueError: for an unknown provider.
+        """
+
+    @abstractmethod
+    def set_api_key(self, provider, key):
+        """
+        Store ``key`` (surrounding whitespace is removed), replacing any previous one.
+
+        :raises ValueError: for an unknown provider or an unusable key.
+        :raises SecretStoreError: when the key cannot be written.
+        """
+
+    @abstractmethod
+    def delete_api_key(self, provider):
+        """Forget the key of ``provider``. Deleting a key that is not there is not an error."""

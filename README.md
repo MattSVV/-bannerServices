@@ -34,6 +34,10 @@ From OpenLP, the user fills in the sermon data, picks a template (or asks the AI
 | Templates | Built-in HTML/CSS templates. Deterministic, free, and offline. |
 | AI (bring your own key) | The user configures a provider (OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible endpoint) with their own API key. The AI designs an HTML/CSS template; it never writes the text. |
 
+### Configuring AI
+
+Open **Settings > Configure OpenLP > Covers**. Pick a provider, optionally type a model name (the box shows the default), and paste your API key. For a local server such as Ollama choose *OpenAI-compatible server* and enter its address (`https://...`, or `http://localhost:11434/v1`). The key is stored in a private file in your OpenLP data folder, not in OpenLP's settings, so exporting your settings never includes it. The field never shows the key again; it says "saved", and **Clear** followed by **OK** removes it. **Test connection** will be enabled with the AI mode.
+
 ### Key design decisions
 
 | Decision | Why |

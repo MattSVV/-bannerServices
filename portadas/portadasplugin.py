@@ -33,9 +33,15 @@ from openlp.core.lib.plugin import Plugin, PluginStatus, StringContent
 from openlp.core.state import State
 from openlp.core.ui.icons import UiIcons
 
+from .lib.ai_settings import default_secret_store  # noqa: F401 - importing it registers the AI setting defaults
 from .lib.mediaitem import PortadasMediaItem
+from .lib.settingstab import PortadasSettingsTab
+from .security.redaction import install_log_redaction
 
 log = logging.getLogger(__name__)
+
+# Every record of the plugin is cleaned of API keys before OpenLP's handlers see it.
+install_log_redaction()
 
 # OpenLP reads '<name>/status' while a plugin is instantiated, so the default must exist at import time.
 Settings.extend_default_settings({'portadas/status': PluginStatus.Inactive})
@@ -46,7 +52,7 @@ class PortadasPlugin(Plugin):
     log.info('Portadas plugin loaded')
 
     def __init__(self):
-        super().__init__('portadas', PortadasMediaItem)
+        super().__init__('portadas', PortadasMediaItem, PortadasSettingsTab)
         self.weight = -6
         self.icon_path = UiIcons().picture
         self.icon = build_icon(self.icon_path)
