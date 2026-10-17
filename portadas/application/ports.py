@@ -65,3 +65,73 @@ class CoverRenderer(ABC):
         Like ``render`` but returns immediately; exactly one of the callbacks runs later, on the calling thread's
         event loop: ``on_done(RenderResult)`` or ``on_error(RenderError)``.
         """
+
+
+class RepositoryError(Exception):
+    """The cover store failed (I/O error, refused input...). The message is presentable to the user."""
+
+
+class InvalidCoverId(RepositoryError, ValueError):
+    """A cover id is not a safe identifier (path separators, ``..``, reserved names, bad length...)."""
+
+
+class CoverNotFound(RepositoryError, KeyError):
+    """No cover is stored under the requested id."""
+
+    def __str__(self):
+        return Exception.__str__(self)
+
+
+class CoverCorrupt(RepositoryError):
+    """A stored cover exists but cannot be read (broken JSON, unknown schema version, missing image)."""
+
+
+class ExportExists(RepositoryError):
+    """The export destination already exists and overwriting was not requested."""
+
+
+class CoverRepository(ABC):
+    """Stores covers (their data and rendered PNG) and finds them again."""
+
+    @abstractmethod
+    def save(self, cover, png_bytes):
+        """
+        Store ``cover`` and its PNG, replacing any cover with the same id. All-or-nothing: a failure leaves the
+        previous state untouched.
+
+        :raises InvalidCoverId: when ``cover.id`` is not a safe identifier.
+        :raises RepositoryError: when ``png_bytes`` is not a PNG or the store cannot be written.
+        """
+
+    @abstractmethod
+    def get(self, cover_id):
+        """
+        Return the ``Cover`` stored under ``cover_id``.
+
+        :raises InvalidCoverId: / :raises CoverNotFound: / :raises CoverCorrupt:
+        """
+
+    @abstractmethod
+    def list(self):
+        """Return every readable cover, newest first. Unreadable entries are skipped with a logged warning."""
+
+    @abstractmethod
+    def delete(self, cover_id):
+        """Remove a cover and its PNG. :raises CoverNotFound: when it does not exist."""
+
+    @abstractmethod
+    def export_png(self, cover_id, dest_path, overwrite=False):
+        """
+        Copy the cover's PNG to ``dest_path``.
+
+        :raises ExportExists: when ``dest_path`` exists and ``overwrite`` is false.
+        :raises RepositoryError: when the destination cannot be written.
+        """
+
+    @abstractmethod
+    def png_path(self, cover_id):
+        """
+        Return the path of the stored PNG, for thumbnails and for adding it to a service. Treat it as read-only.
+
+        :raises CoverNotFound: when there is no such cover.
+        """
