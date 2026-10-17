@@ -120,6 +120,13 @@ uploaded-PNG option) before it is stored or rendered, and again on every load an
 | Plain `http://` | Only to `localhost`/`127.0.0.1` (OpenAI-compatible), enforced by `validate_base_url` |
 | Off the GUI thread | `lib/background.py` runs the blocking call on a `QThreadPool` and delivers the result on the GUI thread; a closed dialog cancels the job: the request stops at its next checkpoint (between chunks and attempts, `application/cancellation.py`); a wait on the socket ends by its own timeout |
 
+The editor's AI mode (`lib/editform.py`, T13) adds no new capability: `lib/ai_designer.make_designer` reads the saved
+settings and the key on the GUI thread (a bad server address or an unreadable key file becomes a fixed message), the
+request runs through `lib/background.py`, and only the sanitised template and icon of `DesignedCover.apply_to` reach the
+form; the visible text always comes from the form fields. Every message shown (adapter, use case or unexpected error)
+passes `redact` again, and an unexpected exception is shown by type name only. The dialog allows one design at a time,
+disables *Save* while it runs, and a closed dialog cancels the job and ignores a late callback.
+
 An AI template is stored with the cover as `custom_template_html` in its JSON (additive key, schema 1). It is
 re-sanitised when the file is read (a stored template that no longer passes is dropped and the cover still loads,
 falling back to its `template_id`) and again in `CreateCoverFromTemplate.compose`. There is no path involved, so there is

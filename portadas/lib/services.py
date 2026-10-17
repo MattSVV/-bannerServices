@@ -41,6 +41,7 @@ class PortadasServices:
     icons: object
     thumbnail_dir: Path
     template_thumbnails: dict = field(default_factory=dict)  # template id -> PNG bytes, rendered lazily
+    designer_factory: object = None  # ``callable() -> CoverDesigner`` (may raise DesignError); None disables AI mode
 
     def close(self):
         """Cancel renders in progress and release the renderer's resources (safe to call twice)."""
@@ -64,7 +65,8 @@ def build_services(data_dir, renderer=None):
     data_dir.mkdir(parents=True, exist_ok=True)
     templates, icons = TemplateCatalog(), IconCatalog()
     repository = FileCoverRepository(data_dir)
+    from .ai_designer import make_designer
     return PortadasServices(repository=repository,
                             creator=CreateCoverFromTemplate(templates, icons, renderer, repository),
                             renderer=renderer, templates=templates, icons=icons,
-                            thumbnail_dir=data_dir / 'thumbnails')
+                            thumbnail_dir=data_dir / 'thumbnails', designer_factory=make_designer)

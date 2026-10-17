@@ -121,6 +121,10 @@ fakes behind the ports (`tests/fakes.py`: an in-memory repository and a renderer
 boxes and file choosers are overridden in the tests, so nothing opens a modal window. The `openlp_env` fixture in
 `tests/conftest.py` gives widgets what they need from OpenLP (a `Registry` with a `Settings` backed by a temp file).
 
+`tests/test_edit_form_ai.py` covers the editor's AI mode with a fake `CoverDesigner` that blocks on a gate the test
+opens: busy state, double click, cancel, closing mid-request, redacted errors, saving the template, going back to a
+built-in template. `tests/test_ai_designer.py` covers the settings-and-key factory.
+
 Things worth knowing:
 
 - A community plugin must register the default shortcuts of its list view itself
@@ -145,6 +149,10 @@ Run OpenLP with the plugin installed (`scripts/dev-install.sh`) and tick each li
   the preview follows.
 - [ ] **Upload an icon.** *Upload...* with a small PNG: it appears as "Uploaded" and the preview shows it. Try an SVG
   you drew; then a hostile SVG (one with a `<script>`): it is rejected with a message.
+- [ ] **AI design.** With a provider and key configured (*Settings > Configure OpenLP > Covers*), type a hint and
+  click *Design with AI*: the button greys out and *Cancel design* appears; the preview then redraws with a new look and
+  the same text. Click *Cancel design* during a second request: it stops and the previous design stays. With no key,
+  the status line says so and nothing is sent. Pick a built-in template: the AI design is dropped.
 - [ ] **Save.** *Save* closes the dialog; the cover is in the list with a thumbnail, newest first.
 - [ ] **Edit.** Select it, click *Edit* (or the context menu). The fields are filled in; change the title, *Save*:
   the list shows the new title and thumbnail, and there is still only one entry.

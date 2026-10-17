@@ -38,6 +38,12 @@ From OpenLP, the user fills in the sermon data, picks a template (or asks the AI
 
 Open **Settings > Configure OpenLP > Covers**. Pick a provider, optionally type a model name (the box shows the default), and paste your API key. For a local server such as Ollama choose *OpenAI-compatible server* and enter its address (`https://...`, or `http://localhost:11434/v1`). The key is stored in a private file in your OpenLP data folder, not in OpenLP's settings, so exporting your settings never includes it. The field never shows the key again; it says "saved", and **Clear** followed by **OK** removes it. **Test connection** asks the provider (in the background) whether the key and model work. Default models were checked against each provider's documentation on 2026-10-17 (OpenAI `gpt-6-luna`, Anthropic `claude-haiku-5-5`, Gemini `gemini-3.5-flash-lite`; the OpenAI-compatible default `llama3.1` is an unverified example, change it to a model your server has). When you ask the AI for a design, the cover text and your style hint are sent to the provider you chose; see `docs/security.md`.
 
+### Designing a cover with AI
+
+In the cover editor, type the cover text as usual, optionally describe the style you want (up to 300 characters, for example "warm colours, stained glass"), and click **Design with AI**. The request runs in the background: the button is disabled, the status line says the AI is working, and **Cancel design** stops waiting (the request ends at its next checkpoint and its answer is discarded). When the design arrives, the preview redraws with it, and a note tells you the cover now uses an AI-designed template. The AI only designs the look: your text is always the one you typed. If the AI also drew an icon, it appears as "Uploaded" in the icon list.
+
+Failures are shown on the status line without any key or provider detail: no key saved, an invalid server address, a network error, a request that took too long, or a template that was rejected as unsafe after one correction. Fix the cause in *Settings > Configure OpenLP > Covers* or try again. *Use the selected template instead* (or clicking a built-in template) goes back to a built-in template. *Save* is disabled while a design is running, and closing the editor cancels it. The AI template is stored with the cover and checked again every time it is opened.
+
 ### Key design decisions
 
 | Decision | Why |

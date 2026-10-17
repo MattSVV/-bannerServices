@@ -24,6 +24,10 @@ The dialog only talks to the application layer through ``PortadasServices``: ``c
 composes and stores; ``renderer`` draws the preview. One render runs at a time. Edits restart a debounce timer; when
 a render finishes after the user kept typing, its result is dropped and a fresh render starts, so the preview never
 shows stale content for long and renders never pile up.
+
+The AI design mode asks the configured provider for a template (``DesignCoverWithAI``) on a background job. It sends
+the cover text and a style hint and applies only the sanitised template (and icon) that comes back: the AI never
+writes the visible text. One design runs at a time; closing the dialog cancels it and drops any late callback.
 """
 import logging
 import uuid
@@ -32,12 +36,16 @@ from pathlib import Path
 from openlp.core.common.i18n import translate
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from ..application.design_cover import DesignCoverWithAI
+from ..application.design_prompt import MAX_HINT_CHARS
 from ..application.icon_upload import icon_from_png_bytes, icon_from_svg_text
-from ..application.ports import RenderError, RepositoryError
+from ..application.ports import DesignError, RenderError, RepositoryError
 from ..domain.cover import DEFAULT_ICON, DEFAULT_TEMPLATE_ID, MAX_RAW_READINGS, MAX_READINGS, IconKind, IconRef
 from ..domain.errors import DomainError
 from ..domain.scripture import MAX_REFERENCE_CHARS, parse_reference
 from ..security.html_policy import sanitize_svg
+from ..security.redaction import redact
+from .background import run_in_background
 from .iconimage import MAX_PNG_FILE_BYTES, prepare_png_icon, svg_pixmap
 
 log = logging.getLogger(__name__)
@@ -68,6 +76,8 @@ class CoverEditForm(QtWidgets.QDialog):
         self._preview_dirty = False
         self._preview_image = None
         self._custom_icon_item = None
+        self._custom_template_html = None  # the AI design of the cover being edited, or None for a built-in template
+        self._design_job = None
         self._thumb_queue = []
         self._want_thumbnails = thumbnails
         self.warning_labels = {}
@@ -128,7 +138,7 @@ class CoverEditForm(QtWidgets.QDialog):
         self.template_list.setIconSize(THUMB_SIZE)
         self.template_list.setFixedHeight(THUMB_SIZE.height() + 52)
         self.template_list.setObjectName('template_list')
-        self.template_list.currentItemChanged.connect(self._edited)
+        self.template_list.currentItemChanged.connect(self._template_picked)
         form_column.addWidget(self.template_label)
         form_column.addWidget(self.template_list)
 
@@ -147,6 +157,7 @@ class CoverEditForm(QtWidgets.QDialog):
         form_column.addWidget(self.icon_label)
         form_column.addWidget(self.icon_list)
         form_column.addWidget(self.upload_button, 0, QtCore.Qt.AlignLeft)
+        self._setup_ai_ui(form_column)
 
         preview_column = QtWidgets.QVBoxLayout()
         layout.addLayout(preview_column, 6)
@@ -168,6 +179,37 @@ class CoverEditForm(QtWidgets.QDialog):
         preview_column.addWidget(self.preview_label, 1)
         preview_column.addWidget(self.status_label)
         preview_column.addWidget(self.button_box)
+
+    def _setup_ai_ui(self, column):
+        """The AI design row: a style hint, Design / Cancel buttons and a note while an AI template is in use."""
+        self.ai_label = QtWidgets.QLabel()
+        self.hint_edit = QtWidgets.QLineEdit()
+        self.hint_edit.setObjectName('hint_edit')
+        self.hint_edit.setMaxLength(MAX_HINT_CHARS)
+        self.hint_edit.returnPressed.connect(self.on_design)
+        self.design_button = QtWidgets.QPushButton()
+        self.design_button.setObjectName('design_button')
+        self.design_button.clicked.connect(self.on_design)
+        self.cancel_design_button = QtWidgets.QPushButton()
+        self.cancel_design_button.setObjectName('cancel_design_button')
+        self.cancel_design_button.clicked.connect(self.on_cancel_design)
+        self.cancel_design_button.setVisible(False)
+        self.use_template_button = QtWidgets.QPushButton()
+        self.use_template_button.setObjectName('use_template_button')
+        self.use_template_button.clicked.connect(self.on_use_template)
+        self.ai_note_label = self._message_label('aiNoteLabel')
+        self.ai_note_label.setStyleSheet('')
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(self.hint_edit, 1)
+        row.addWidget(self.design_button)
+        row.addWidget(self.cancel_design_button)
+        column.addWidget(self.ai_label)
+        column.addLayout(row)
+        note_row = QtWidgets.QHBoxLayout()
+        note_row.addWidget(self.ai_note_label, 1)
+        note_row.addWidget(self.use_template_button)
+        column.addLayout(note_row)
+        self._show_ai_note()
 
     @staticmethod
     def _message_label(object_name):
@@ -197,6 +239,14 @@ class CoverEditForm(QtWidgets.QDialog):
         self.icon_label.setText(t('PortadasPlugin.EditForm', 'Icon:'))
         self.upload_button.setText(t('PortadasPlugin.EditForm', 'Upload...'))
         self.upload_button.setToolTip(t('PortadasPlugin.EditForm', 'Use your own SVG or PNG file as the icon.'))
+        self.ai_label.setText(t('PortadasPlugin.EditForm', 'AI design (optional): describe the style you want'))
+        self.hint_edit.setPlaceholderText(t('PortadasPlugin.EditForm',
+                                            'For example: warm colours, a stained-glass feel'))
+        self.design_button.setText(t('PortadasPlugin.EditForm', 'Design with AI'))
+        self.design_button.setToolTip(t('PortadasPlugin.EditForm', 'Sends the cover text and your hint to the AI '
+                                        'provider you configured. The AI designs the look; it never writes the text.'))
+        self.cancel_design_button.setText(t('PortadasPlugin.EditForm', 'Cancel design'))
+        self.use_template_button.setText(t('PortadasPlugin.EditForm', 'Use the selected template instead'))
         self.save_button.setText(t('PortadasPlugin.EditForm', 'Save'))
         self.button_box.button(QtWidgets.QDialogButtonBox.Cancel).setText(t('PortadasPlugin.EditForm', 'Cancel'))
         self.key_verse_edit.setPlaceholderText(t('PortadasPlugin.EditForm', 'For example: Santiago 4:7'))
@@ -239,10 +289,12 @@ class CoverEditForm(QtWidgets.QDialog):
             if cover is None:
                 self.label_edit.setText(self._default('label'))
                 self.readings_label_edit.setText(self._default('readings_label'))
+            self._custom_template_html = None if cover is None else cover.custom_template_html
             self._select_template(DEFAULT_TEMPLATE_ID if cover is None else cover.template_id)
             self._select_icon(DEFAULT_ICON if cover is None else cover.icon)
         finally:
             self._loading = False
+        self._show_ai_note()
         self._validate_inline()
         self._schedule_preview()
 
@@ -259,6 +311,7 @@ class CoverEditForm(QtWidgets.QDialog):
             'key_verse': self.key_verse_edit.text(), 'readings': self.readings_edit.toPlainText().splitlines(),
             'readings_label': self.readings_label_edit.text(), 'icon': self.icon(),
             'template_id': self.template_id(), 'id': self._cover_id, 'created_at': self._created_at,
+            'custom_template_html': self._custom_template_html,
         }
 
     def template_id(self):
@@ -438,7 +491,7 @@ class CoverEditForm(QtWidgets.QDialog):
         self._scale_preview()
 
     def _update_buttons(self):
-        self.save_button.setEnabled(not self._busy and not self._saving)
+        self.save_button.setEnabled(not self._busy and not self._saving and self._design_job is None)
 
     # --- template thumbnails (lazy, one render at a time, cached for the session) ----------------------------------
     def _missing_thumbnails(self):
@@ -515,6 +568,88 @@ class CoverEditForm(QtWidgets.QDialog):
             return icon_from_png_bytes(prepare_png_icon(path))
         raise DomainError(translate('PortadasPlugin.EditForm', 'Choose an SVG or PNG file.'))
 
+    # --- AI design -------------------------------------------------------------------------------------------------
+    def _show_ai_note(self):
+        using_ai = self._custom_template_html is not None
+        self._show(self.ai_note_label, translate('PortadasPlugin.EditForm', 'This cover uses an AI-designed template. '
+                                                 'The text is still exactly what you typed.') if using_ai else '')
+        self.use_template_button.setVisible(using_ai)
+
+    def _template_picked(self, *_):
+        """Choosing a built-in template by hand replaces the AI design (a template pick would otherwise be ignored)."""
+        if not self._loading and self._custom_template_html is not None:
+            self._custom_template_html = None
+            self._show_ai_note()
+        self._edited()
+
+    def on_use_template(self):
+        """Drop the AI design and go back to the selected built-in template."""
+        self._custom_template_html = None
+        self._show_ai_note()
+        self._edited()
+
+    def _set_designing(self, designing):
+        self.design_button.setEnabled(not designing)
+        self.hint_edit.setEnabled(not designing)
+        self.cancel_design_button.setVisible(designing)
+        self._update_buttons()
+
+    def on_design(self):
+        """Ask the AI for a design of the current cover. One request at a time; the form stays usable meanwhile."""
+        if self._design_job is not None or self._closed or self._saving:
+            return
+        cover, problem = self._first_problem()
+        if cover is None:
+            self._set_status(problem, error=True)
+            return
+        factory = self.services.designer_factory
+        if factory is None:
+            self._set_status(translate('PortadasPlugin.EditForm', 'AI design is not available in this setup.'),
+                             error=True)
+            return
+        try:
+            use_case = DesignCoverWithAI(factory())
+        except DesignError as error:
+            self._set_status(redact(str(error)), error=True)
+            return
+        hint = self.hint_edit.text()
+        self._set_status(translate('PortadasPlugin.EditForm', 'Designing with the AI. This can take a minute...'))
+        self._design_job = run_in_background(lambda: (cover, use_case.design(cover, hint)), self._design_done,
+                                             self._design_failed)
+        self._set_designing(True)
+
+    def on_cancel_design(self):
+        """Stop waiting for the AI: the request ends at its next checkpoint and its outcome is dropped."""
+        if self._design_job is None:
+            return
+        self._design_job.cancel()
+        self._design_job = None
+        self._set_designing(False)
+        self._set_status(translate('PortadasPlugin.EditForm', 'The AI design was cancelled.'))
+
+    def _design_done(self, outcome):
+        if self._closed or self._design_job is None:
+            return
+        self._design_job = None
+        cover, designed = outcome
+        applied = designed.apply_to(cover)  # only the template (and an icon the AI drew) change, never the text
+        self._custom_template_html = applied.custom_template_html
+        self._set_designing(False)
+        if designed.icon is not None:
+            self._set_custom_icon(applied.icon)
+        self._show_ai_note()
+        self._set_status(translate('PortadasPlugin.EditForm', 'The AI design is ready: {notes}').format(
+            notes=redact(designed.notes)) if designed.notes else translate('PortadasPlugin.EditForm',
+                                                                           'The AI design is ready.'))
+        self._schedule_preview()
+
+    def _design_failed(self, message):
+        if self._closed or self._design_job is None:
+            return
+        self._design_job = None
+        self._set_designing(False)
+        self._set_status(redact(message), error=True)
+
     # --- saving ----------------------------------------------------------------------------------------------------
     def show_error(self, title, message):
         """Show an error to the user. Overridable in tests."""
@@ -522,7 +657,7 @@ class CoverEditForm(QtWidgets.QDialog):
 
     def on_save(self):
         """Validate, render and store the cover through the use case; close the dialog on success."""
-        if self._busy or self._saving:
+        if self._busy or self._saving or self._design_job is not None:
             return
         if self._cover_id is None:
             self._cover_id = uuid.uuid4().hex  # one id per dialog: a repeated save replaces the cover, never copies it
@@ -553,6 +688,9 @@ class CoverEditForm(QtWidgets.QDialog):
         if self._saving and result != QtWidgets.QDialog.Accepted:
             return
         self._closed = True
+        if self._design_job is not None:
+            self._design_job.cancel()
+            self._design_job = None
         self.preview_timer.stop()
         self._preview_dirty = False
         self._thumb_queue = []
