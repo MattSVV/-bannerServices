@@ -26,3 +26,6 @@ One row per backlog task: how the factory executed it and what it cost. It is up
 | T04-T06 verify | delegated adversarial verifier | 1 | n/a | **FAIL: 5 bypasses + regex DoS** | 0 | n/a | Green tests did not mean safe; reopened as T06b |
 | T07 | delegated | 1 (shared T07-T08) | 1 (white-frame race fixed with a canary) | check.sh pass | ~1086 | `4b5df9c` | Headless QtWebEngine works offscreen |
 | T08 | delegated | shared | 0 | check.sh pass, 533 tests | ~1203 | `b038b4b` | Traversal-safe repo + use case |
+| T07-T08 verify | delegated adversarial verifier | 1 | n/a | FAIL: 2 hangs, soft timeout, orphan loss | 0 | n/a | Sandbox itself held |
+| T06b | delegated | 1 | (is rework of T06) | check.sh pass, 801 tests | 1851 | `b955cb3` | Security rework caused by verification |
+| T07b | delegated | 1 | (is rework of T07/T08) | check.sh pass, 816 tests | 291 | `44d6c35` | Robustness rework caused by verification |

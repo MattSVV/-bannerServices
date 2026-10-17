@@ -80,7 +80,8 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T06
 - [x] T07
 - [x] T08
-- [ ] T06b (reopened security fix, see below)
+- [x] T06b (reopened security fix)
+- [x] T07b (reopened renderer/repository hardening)
 - [ ] T09
 - [ ] T10
 - [ ] T11
@@ -118,8 +119,9 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 | T05 | done | `66fafe4` | RED `ModuleNotFoundError ...application.icon_catalog`, GREEN 173 tests. Visual check: `noche-dorada` matches the reference design. |
 | T06 | done | `cce22a7` | RED `ModuleNotFoundError ...security.html_policy`, GREEN 350 total. Orchestrator spot check: `scripts/check.sh`, 350 passed, coverage 96.16% (gate 90%). Assess tier: high (3143 lines, hot_path). Adversarial verifier: **5 confirmed CSS/text bypasses + regex DoS** → T06b opened. |
 | T07 | done | `4b5df9c` | RED `ModuleNotFoundError ...qt_renderer`, GREEN. 26 renderer tests run offscreen (no skips); 60-render stress test had 0 bad images; PNGs in `docs/img/` (noche-dorada pixel `#0e1422`). A local HTTP server saw 0 hits for remote requests. |
-| T08 | done | `b038b4b` | RED `...application.create_cover` missing, GREEN. Orchestrator spot check: `scripts/check.sh`, 533 passed, coverage 96.37%. Independent verifier running. |
-| T06b | reopened | | Confirmed bypasses in `portadas/security/css_policy.py`: comment markers inside strings, escaped `\/*`, escaped quote in `content`, `list-style` strings, `<ol>` numbering, and super-linear scripture regex. Reason: an independent adversarial verification rendered the bypasses in real QtWebEngine. |
+| T08 | done | `b038b4b` | RED `...application.create_cover` missing, GREEN. Orchestrator spot check: `scripts/check.sh`, 533 passed, coverage 96.37%. Independent verifier: sandbox held 29 network vectors and all file-escape vectors; **2 hangs + soft timeout + orphan PNG loss** → T07b opened. |
+| T06b | done | `b955cb3` | Confirmed bypasses in `portadas/security/css_policy.py`: comment markers inside strings, escaped `\/*`, escaped quote in `content`, `list-style` strings, `<ol>` numbering, and super-linear scripture regex. Reason: an independent adversarial verification rendered the bypasses in real QtWebEngine. Fix: CSS Syntax L3 tokenizer + allowlist, `<ol>` removed, forced `list-style:none`, bundled fonts only, linear scripture parser with caps. RED 41+15 failing tests, then GREEN. Orchestrator spot check: 801 passed, 97.04%. Re-verification by the original adversarial verifier is running. |
+| T07b | done | `44d6c35` | Reason: independent T07/T08 verification. Fixed: `render()` hang after `close()`, FIFO hang (`O_NONBLOCK`), canvas cap plus post-grab deadline check, orphan PNG kept, no paths in user errors, JSON as commit marker, page deleted before profile. RED shown for each, then GREEN. Orchestrator spot check: 816 passed, 97.04%. Residual: soft render-time bound (documented). |
 
 ## Accepted changes
 
@@ -140,4 +142,4 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 
 ## Next step
 
-T06b security fix (writer). In parallel, an independent verifier for T07/T08. Then T09 + T10 (UI and service).
+T09 + T10 (library tab UI, editor, service integration) by one writer. Re-verification of T06b is still running.
