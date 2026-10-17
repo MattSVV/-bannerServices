@@ -34,6 +34,7 @@ import uuid
 from pathlib import Path
 
 from openlp.core.common.i18n import translate
+from openlp.core.common.settings import Settings
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from ..application.design_cover import DesignCoverWithAI
@@ -45,7 +46,9 @@ from ..domain.errors import DomainError
 from ..domain.scripture import MAX_REFERENCE_CHARS, parse_reference
 from ..security.html_policy import sanitize_svg
 from ..security.redaction import redact
+from .ai_settings import DATA_NOTICE_KEY, destination_label, load_ai_config
 from .background import run_in_background
+from .dialogs import message_box, plain_tooltip
 from .i18n import localize
 from .iconimage import prepare_png_icon, read_regular_file, svg_pixmap
 
@@ -263,7 +266,7 @@ class CoverEditForm(QtWidgets.QDialog):
         for manifest in self.services.templates.list():
             item = QtWidgets.QListWidgetItem(manifest.name)
             item.setData(QtCore.Qt.UserRole, manifest.id)
-            item.setToolTip(localize(manifest.description))
+            item.setToolTip(plain_tooltip(localize(manifest.description)))
             cached = self.services.template_thumbnails.get(manifest.id)
             if cached:
                 item.setIcon(self._thumbnail_icon(cached))
@@ -642,6 +645,11 @@ class CoverEditForm(QtWidgets.QDialog):
             self._set_status(translate('PortadasPlugin.EditForm', 'AI design is not available (could not start the '
                                        'designer).'), error=True)
             return
+        if not Settings().value(DATA_NOTICE_KEY):
+            if not self.confirm_data_use(destination_label(load_ai_config())):
+                self._set_status(translate('PortadasPlugin.EditForm', 'Nothing was sent to the AI.'))
+                return
+            Settings().setValue(DATA_NOTICE_KEY, True)
         hint = self.hint_edit.text()
         self._set_status(translate('PortadasPlugin.EditForm', 'Designing with the AI. This can take a minute...'))
         self._design_job = run_in_background(lambda: (cover, use_case.design(cover, hint)), self._design_done,
@@ -682,7 +690,18 @@ class CoverEditForm(QtWidgets.QDialog):
     # --- saving ----------------------------------------------------------------------------------------------------
     def show_error(self, title, message):
         """Show an error to the user. Overridable in tests."""
-        QtWidgets.QMessageBox.critical(self, title, localize(message))
+        message_box(self, QtWidgets.QMessageBox.Critical, title, localize(message))
+
+    def confirm_data_use(self, destination):
+        """Ask once whether the cover text may be sent to ``destination``. Overridable in tests."""
+        answer = message_box(
+            self, QtWidgets.QMessageBox.Question,
+            translate('PortadasPlugin.EditForm', 'Send the cover text to the AI?'),
+            translate('PortadasPlugin.EditForm', 'Designing with AI sends the cover text (label, titles, subtitle, key '
+                      'verse, readings) and your style hint to {destination}, under its data policy. Nothing else '
+                      'leaves this computer. You are asked only this once.').format(destination=destination),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+        return answer == QtWidgets.QMessageBox.Yes
 
     def on_save(self):
         """Validate, render and store the cover through the use case; close the dialog on success."""

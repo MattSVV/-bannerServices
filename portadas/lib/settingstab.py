@@ -46,6 +46,7 @@ from ..application.ports import DesignError, SecretStoreError
 from ..security.redaction import redact
 from .ai_settings import KEY_OK, KEY_UNBOUND, default_secret_store, key_server_status, load_ai_config, save_ai_config
 from .background import run_in_background
+from .dialogs import message_box
 from .i18n import localize
 
 log = logging.getLogger(__name__)
@@ -132,6 +133,7 @@ class PortadasSettingsTab(SettingsTab):
         self.api_key_label = QtWidgets.QLabel(self.group_box)
         form.addRow(self.api_key_label, key_row)
         self.key_status_label = QtWidgets.QLabel(self.group_box)
+        self.key_status_label.setTextFormat(QtCore.Qt.PlainText)  # it shows host names taken from the saved address
         form.addRow('', self.key_status_label)
         self.test_button = QtWidgets.QPushButton(self.group_box)
         self.test_result_label = QtWidgets.QLabel(self.group_box)
@@ -318,7 +320,8 @@ class PortadasSettingsTab(SettingsTab):
             return None  # no valid address was saved: the key stays unverified and must be entered again
 
     def show_warning(self, text):
-        QtWidgets.QMessageBox.warning(self, translate('PortadasPlugin.SettingsTab', 'Covers settings'), text)
+        message_box(self, QtWidgets.QMessageBox.Warning, translate('PortadasPlugin.SettingsTab', 'Covers settings'),
+                    text)
 
     # --- test connection
     def on_test_connection(self):

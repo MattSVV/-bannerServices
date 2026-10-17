@@ -44,6 +44,9 @@ class Form(CoverEditForm):
     def choose_icon_file(self):
         return self.chosen_file
 
+    def confirm_data_use(self, destination):
+        return True
+
 
 @pytest.fixture
 def services(tmp_path):

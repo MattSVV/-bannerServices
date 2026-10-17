@@ -39,6 +39,7 @@ from openlp.core.ui.icons import UiIcons
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from ..application.ports import RepositoryError
+from .dialogs import message_box, plain_tooltip
 from .editform import CoverEditForm
 from .i18n import localize
 from .services import build_services
@@ -98,7 +99,7 @@ class PortadasMediaItem(MediaManagerItem):
         # One service item per cover, like custom slides: selecting several covers adds several items.
         self.single_service_item = False
         self.quick_preview_allowed = True
-        self.has_search = True
+        self.has_search = False  # the filter box is local; OpenLP's web API would call a ``search`` we do not have
 
     def required_icons(self):
         super().required_icons()
@@ -158,14 +159,14 @@ class PortadasMediaItem(MediaManagerItem):
 
     # --- user feedback (overridable so tests never open a modal window) -----------------------------------------------
     def show_error(self, title, message):
-        QtWidgets.QMessageBox.critical(self, title, localize(message))
+        message_box(self, QtWidgets.QMessageBox.Critical, title, localize(message))
 
     def confirm_delete(self, count):
-        answer = QtWidgets.QMessageBox.question(
-            self, translate('PortadasPlugin.MediaItem', 'Delete covers'),
+        answer = message_box(
+            self, QtWidgets.QMessageBox.Question, translate('PortadasPlugin.MediaItem', 'Delete covers'),
             translate('PortadasPlugin.MediaItem', 'Are you sure you want to delete the {count} selected cover(s)? '
                       'This cannot be undone.').format(count=count),
-            defaultButton=QtWidgets.QMessageBox.No)
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
         return answer == QtWidgets.QMessageBox.Yes
 
     def choose_export_path(self, default_name):
@@ -195,7 +196,7 @@ class PortadasMediaItem(MediaManagerItem):
         for cover in covers:
             list_item = QtWidgets.QListWidgetItem(display_title(cover))
             list_item.setData(QtCore.Qt.UserRole, cover.id)
-            list_item.setToolTip(self._tooltip(cover))
+            list_item.setToolTip(plain_tooltip(self._tooltip(cover)))
             icon = self._thumbnail_icon(cover.id)
             if icon is not None:
                 list_item.setIcon(icon)

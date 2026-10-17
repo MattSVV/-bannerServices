@@ -23,6 +23,8 @@ Non-secret AI settings in OpenLP's ``Settings`` (``portadas/ai ...``), plus the 
 
 The API key is deliberately not here: it lives in the ``SecretStore`` so OpenLP's settings export never contains it.
 """
+from urllib.parse import urlsplit
+
 from openlp.core.common.applocation import AppLocation
 from openlp.core.common.settings import Settings
 
@@ -43,6 +45,7 @@ MODEL_KEY = 'portadas/ai model'
 BASE_URL_KEY = 'portadas/ai base url'
 TIMEOUT_KEY = 'portadas/ai timeout'
 BACKGROUND_KEY = 'portadas/ai background images'
+DATA_NOTICE_KEY = 'portadas/ai data notice accepted'  # the user agreed that cover text is sent to the provider
 
 # OpenLP reads defaults while a plugin is instantiated, so they must exist at import time.
 Settings.extend_default_settings({
@@ -51,6 +54,7 @@ Settings.extend_default_settings({
     BASE_URL_KEY: '',
     TIMEOUT_KEY: DEFAULT_TIMEOUT,
     BACKGROUND_KEY: False,
+    DATA_NOTICE_KEY: False,
 })
 
 
@@ -101,3 +105,14 @@ def key_server_status(secret_store, base_url):
     if not saved:
         return KEY_UNBOUND, None
     return (KEY_OK if saved == wanted else KEY_CHANGED), saved
+
+
+def destination_label(config):
+    """Where a design request goes, for the user: the provider's name, or the host of an own server."""
+    if config.provider == COMPATIBLE:
+        try:
+            return urlsplit(origin_of(config.base_url)).netloc
+        except ValueError:
+            return 'the server you configured'
+    names = {'openai': 'OpenAI', 'anthropic': 'Anthropic', 'gemini': 'Google Gemini'}
+    return names.get(config.provider, 'the AI provider')

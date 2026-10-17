@@ -82,7 +82,14 @@ UI = {
         'Readings heading:': 'Encabezado de lecturas:',
         'Rendering the preview...': 'Generando la vista previa...',
         'Sample title': 'Título de ejemplo',
+        'Designing with AI sends the cover text (label, titles, subtitle, key verse, readings) and your style hint to '
+        '{destination}, under its data policy. Nothing else leaves this computer. You are asked only this once.':
+            'Diseñar con IA envía el texto de la portada (etiqueta, títulos, subtítulo, versículo clave, lecturas) y '
+            'su indicación de estilo a {destination}, según su política de datos. Nada más sale de este equipo. Solo '
+            'se le pregunta esta vez.',
+        'Nothing was sent to the AI.': 'No se envió nada a la IA.',
         'Save': 'Guardar',
+        'Send the cover text to the AI?': '¿Enviar el texto de la portada a la IA?',
         'Sends the cover text and your hint to the AI provider you configured. The AI designs the look; it never '
         'writes the text.': 'Envía el texto de la portada y su indicación al proveedor de IA que configuró. La IA '
                             'diseña el aspecto; nunca escribe el texto.',
