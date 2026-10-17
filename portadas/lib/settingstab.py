@@ -44,6 +44,7 @@ from ..application.ports import DesignError, SecretStoreError
 from ..security.redaction import redact
 from .ai_settings import default_secret_store, load_ai_config, save_ai_config
 from .background import run_in_background
+from .i18n import localize
 
 log = logging.getLogger(__name__)
 
@@ -177,7 +178,7 @@ class PortadasSettingsTab(SettingsTab):
             try:
                 validate_base_url(self.base_url_edit.text())
             except ValueError as error:
-                message = str(error)
+                message = localize(str(error))
         self.base_url_error_label.setText(message)
         self.base_url_error_label.setVisible(bool(message))
 
@@ -243,7 +244,8 @@ class PortadasSettingsTab(SettingsTab):
             except ValueError as error:
                 if config.provider == COMPATIBLE:
                     warnings.append(translate('PortadasPlugin.SettingsTab',
-                                              'The server address was not saved: {error}').format(error=error))
+                                              'The server address was not saved: {error}').format(
+                                                  error=localize(str(error))))
         save_ai_config(self.settings, AiConfig(config.provider, config.model, base_url, config.timeout,
                                                config.background_images))
         self._save_key(config.provider, warnings)
@@ -268,7 +270,7 @@ class PortadasSettingsTab(SettingsTab):
             warnings.append(translate(context, 'The API key was not saved: it is empty, too short or long, or contains '
                                               'spaces or unsupported characters.'))
         except SecretStoreError as error:
-            warnings.append(redact(str(error)))
+            warnings.append(redact(localize(str(error))))
 
     def show_warning(self, text):
         QtWidgets.QMessageBox.warning(self, translate('PortadasPlugin.SettingsTab', 'Covers settings'), text)
@@ -298,12 +300,12 @@ class PortadasSettingsTab(SettingsTab):
     def _test_done(self, message):
         self._test_job = None
         self.test_button.setEnabled(True)
-        self.test_result_label.setText(redact(message))
+        self.test_result_label.setText(redact(localize(message)))
 
     def _test_failed(self, message):
         self._test_job = None
         self.test_button.setEnabled(True)
-        self.test_result_label.setText(redact(message))
+        self.test_result_label.setText(redact(localize(message)))
 
     def _cancel_test(self):
         if self._test_job is not None:

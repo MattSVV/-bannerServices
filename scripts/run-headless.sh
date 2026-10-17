@@ -6,6 +6,7 @@
 #   OPENLP_SRC   OpenLP checkout (default ../openlp)
 #   LOG_COPY     if set, copy the full OpenLP log to this path
 #   E2E_TIMEOUT  hard limit in seconds for the end-to-end cover flow (default 300)
+#   OPENLP_LANGUAGE  OpenLP language code to run with in the throwaway profile (for example es)
 #   SECONDS_RUN  max seconds to wait for the plugin to initialise (default 120)
 set -euo pipefail
 
@@ -20,7 +21,9 @@ export QT_QPA_PLATFORM=offscreen
 
 # Pre-seed settings so no blocking dialog appears (wizard done, versions current) and the plugin is Active.
 mkdir -p "$XDG_CONFIG_HOME/OpenLP"
-printf '[core]\nhas%%20run%%20wizard=true\napplication%%20version=3.1.8\n\n[settings]\nversion=3\n\n[portadas]\nstatus=1\n' > "$XDG_CONFIG_HOME/OpenLP/OpenLP.conf"
+language_line=''
+[ -z "${OPENLP_LANGUAGE:-}" ] || language_line="language=$OPENLP_LANGUAGE\n"
+printf "[core]\nhas%%20run%%20wizard=true\napplication%%20version=3.1.8\n${language_line}\n[settings]\nversion=3\n\n[portadas]\nstatus=1\n" > "$XDG_CONFIG_HOME/OpenLP/OpenLP.conf"
 
 OPENLP_DATA_DIR="$XDG_DATA_HOME/openlp" "$repo/scripts/dev-install.sh"
 

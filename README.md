@@ -61,6 +61,7 @@ Failures are shown on the status line without any key or provider detail: no key
 | AI HTML is **sanitized** and rendered with JS off and network blocked | AI output is untrusted input. |
 | **Bring your own key** | The project pays no AI costs, and each church uses the provider it prefers. |
 | Runtime deps limited to what OpenLP ships | Packaged OpenLP builds cannot install extra packages. |
+| **Spanish** follows OpenLP's language setting, served from a Python catalog | A plugin cannot add `.qm` files to OpenLP, and the Qt compiler is not shipped. See [docs/install.md](docs/install.md). |
 | Hexagonal architecture | The domain and use cases are pure Python and tested without Qt. Qt, OpenLP and HTTP live in adapters. |
 
 ## The factory experiment

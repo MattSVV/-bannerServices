@@ -46,6 +46,7 @@ from ..domain.scripture import MAX_REFERENCE_CHARS, parse_reference
 from ..security.html_policy import sanitize_svg
 from ..security.redaction import redact
 from .background import run_in_background
+from .i18n import localize
 from .iconimage import MAX_PNG_FILE_BYTES, prepare_png_icon, svg_pixmap
 
 log = logging.getLogger(__name__)
@@ -262,7 +263,7 @@ class CoverEditForm(QtWidgets.QDialog):
         for manifest in self.services.templates.list():
             item = QtWidgets.QListWidgetItem(manifest.name)
             item.setData(QtCore.Qt.UserRole, manifest.id)
-            item.setToolTip(manifest.description)
+            item.setToolTip(localize(manifest.description))
             cached = self.services.template_thumbnails.get(manifest.id)
             if cached:
                 item.setIcon(self._thumbnail_icon(cached))
@@ -270,7 +271,7 @@ class CoverEditForm(QtWidgets.QDialog):
         for icon_id in self.services.icons.ids():
             item = QtWidgets.QListWidgetItem()
             item.setData(QtCore.Qt.UserRole, IconRef(IconKind.BUILTIN, icon_id))
-            item.setToolTip(icon_id.replace('-', ' '))
+            item.setToolTip(localize(icon_id.replace('-', ' ')))
             try:
                 item.setIcon(QtGui.QIcon(svg_pixmap(self.services.icons.svg(icon_id))))
             except DomainError:
@@ -399,12 +400,12 @@ class CoverEditForm(QtWidgets.QDialog):
         try:
             parse_reference(text)
         except DomainError as error:
-            return str(error)
+            return localize(str(error))
         return ''
 
     @staticmethod
     def _show(label, text):
-        label.setText(text)
+        label.setText(localize(text))
         label.setVisible(bool(text))
 
     def _first_problem(self):
@@ -412,7 +413,7 @@ class CoverEditForm(QtWidgets.QDialog):
         try:
             return self.services.creator.build_cover(**self.values()), None
         except DomainError as error:
-            return None, str(error)
+            return None, localize(str(error))
 
     # --- live preview ----------------------------------------------------------------------------------------------
     def _schedule_preview(self):
@@ -478,7 +479,7 @@ class CoverEditForm(QtWidgets.QDialog):
         self._update_buttons()
 
     def _set_status(self, text, error=False):
-        self.status_label.setText(text)
+        self.status_label.setText(localize(text))
         self.status_label.setStyleSheet('color: #b00020;' if error else '')
 
     def _show_image(self, png_bytes):
@@ -680,7 +681,7 @@ class CoverEditForm(QtWidgets.QDialog):
     # --- saving ----------------------------------------------------------------------------------------------------
     def show_error(self, title, message):
         """Show an error to the user. Overridable in tests."""
-        QtWidgets.QMessageBox.critical(self, title, message)
+        QtWidgets.QMessageBox.critical(self, title, localize(message))
 
     def on_save(self):
         """Validate, render and store the cover through the use case; close the dialog on success."""

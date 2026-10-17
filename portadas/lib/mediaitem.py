@@ -40,6 +40,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from ..application.ports import RepositoryError
 from .editform import CoverEditForm
+from .i18n import localize
 from .services import build_services
 
 log = logging.getLogger(__name__)
@@ -157,7 +158,7 @@ class PortadasMediaItem(MediaManagerItem):
 
     # --- user feedback (overridable so tests never open a modal window) -----------------------------------------------
     def show_error(self, title, message):
-        QtWidgets.QMessageBox.critical(self, title, message)
+        QtWidgets.QMessageBox.critical(self, title, localize(message))
 
     def confirm_delete(self, count):
         answer = QtWidgets.QMessageBox.question(

@@ -62,6 +62,14 @@ Portadas is installed as **Inactive** (its default status is set in `portadas/po
 
 If Portadas is missing from the list, the plugin was not found or failed to import: see Troubleshooting.
 
+## 4b. Language
+
+Portadas speaks the language OpenLP is set to. It has two languages: English (the source) and Spanish. When OpenLP's language is Spanish (**Settings > Language**, then restart OpenLP, as OpenLP itself asks), every label, button, tooltip, message and error of the plugin appears in Spanish, including the *Automatic* choice when your system is Spanish. Any other language shows English.
+
+How it works, and why it is not a `.qm` file: OpenLP reads translations only from the `.qm` files in its own `i18n` folder (`openlp/core/common/i18n.py`, `LanguageManager.get_translators` at line 220 and `find_qm_files` at line 246) and installs them once at start (`openlp/core/app.py:605-611`). A community plugin cannot add to that folder, and the Qt tool that compiles `.ts` into `.qm` is not part of OpenLP's runtime. The plugin therefore keeps its Spanish texts in a plain Python catalog (`portadas/lib/i18n_es.py`) and, when it loads, installs a small `QTranslator` that answers from it. The plugin's text still goes through OpenLP's `translate()`, so the standard mechanism is used and nothing is patched. Texts that are not in the catalog stay in English. The default cover labels *MENSAJE* and *LECTURAS* are cover content, not interface text, and are the same in every language.
+
+To check it, choose Spanish in OpenLP and restart: the media tab reads **Portadas**. Adding another language means adding a catalog module and mapping its code in `portadas/lib/i18n.py`.
+
 ## 5. Where your data lives
 
 | What | Where | Notes |

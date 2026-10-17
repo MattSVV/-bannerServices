@@ -34,6 +34,7 @@ from openlp.core.state import State
 from openlp.core.ui.icons import UiIcons
 
 from .lib.ai_settings import default_secret_store  # noqa: F401 - importing it registers the AI setting defaults
+from .lib.i18n import install_for_openlp
 from .lib.mediaitem import PortadasMediaItem
 from .lib.settingstab import PortadasSettingsTab
 from .security.redaction import install_log_redaction
@@ -52,6 +53,7 @@ class PortadasPlugin(Plugin):
     log.info('Portadas plugin loaded')
 
     def __init__(self):
+        install_for_openlp()  # before the base class asks for any text
         super().__init__('portadas', PortadasMediaItem, PortadasSettingsTab)
         self.weight = -6
         self.icon_path = UiIcons().picture
