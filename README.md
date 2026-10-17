@@ -1,38 +1,101 @@
-# bannerServices
+# bannerServices — Portadas for OpenLP
 
-An OpenLP plugin that creates a sermon banner: a title, Bible verses, and an icon (AI-generated or hand-made), shown at the start of each sermon.
+A personal project with two outcomes:
 
-This project has two goals:
+1. **Product:** *Portadas*, an OpenLP plugin that creates sermon cover slides (title, icon, subtitle, key verse, readings) from HTML/CSS templates or from an AI-designed template, and adds them to the service order.
+2. **Experiment:** a public record of **how an AI software factory was designed**. A human acts as product manager and factory builder, AI agents execute the backlog, and the cost of code that actually works is measured.
 
-1. **Product:** a working OpenLP plugin, used personally and by a church that already runs OpenLP, and published as open source.
-2. **Software factory experiment:** learn to design agent systems that resolve backlog tasks automatically. The human acts as product manager and builds the factory, and measures the cost of code that actually works.
+> This is a personal learning project, not an official OpenLP plugin. It is published as open source so others can study both the plugin and the factory that built it.
 
-## Working assumption (not yet confirmed)
+## Quick path (developers)
 
-From OpenLP, the user picks a title, verses, and an icon. The plugin generates a banner slide or image and inserts it into the service order, right before the sermon.
+1. Run OpenLP **3.1.8** from source (see [Development setup](#development-setup)).
+2. Link the plugin into OpenLP's community plugins dir: `scripts/dev-install.sh`.
+3. Run the quality gate: `scripts/check.sh`.
+4. Start OpenLP. A **Portadas** tab appears in the library.
 
-## Open questions
+## The product
 
-- Is this the intended flow? The detailed product idea is still pending.
-- Should the banner also be exported as a standalone image, for example for social media?
-- Icon source: which AI image service, or manual upload only?
-- Which OpenLP version does the church run?
+From OpenLP, the user fills in the sermon data, picks a template (or asks the AI for a custom design), and gets a 1920x1080 cover. The cover is saved in the Portadas library, can be exported as PNG (for example for social media), and can be added to the service right before the sermon.
 
-## Plan
+| Field | Example |
+|-------|---------|
+| Label | MENSAJE |
+| Title (second line accented) | Resistir / *al diablo* |
+| Icon | shield with a heart (bundled SVG, upload, or AI-drawn) |
+| Subtitle | Firmes en la batalla de la mente… |
+| Key verse | Efesios 6:11 |
+| Readings | Efesios 6:11-12 · 2 Corintios 10:4-5 · … |
 
-1. **Product:** write the spec and the backlog. The backlog is the factory's raw material.
-2. **First slice by hand:** set up OpenLP locally, learn how plugins load and how to test them (Python + PyQt), and build one small feature end to end.
-3. **Factory:** turn the repeated steps into a pipeline: issue → spec → TDD implementation → review → quality gates → PR.
-4. **Measure:** cost per merged change, gate pass rate, and rework.
+### Two generation modes
 
-## Environment notes (2026-10-13)
+| Mode | How it works |
+|------|--------------|
+| Templates | Built-in HTML/CSS templates. Deterministic, free, and offline. |
+| AI (bring your own key) | The user configures a provider (OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible endpoint) with their own API key. The AI designs an HTML/CSS template; it never writes the text. |
 
-- OpenLP is not installed on the dev machine yet.
-- Python 3.12.14 is available.
-- To verify: OpenLP plugins are Python/PyQt modules that live under `openlp/plugins/` in the OpenLP source tree. Check the docs to see whether there is an external plugin install mechanism.
+### Key design decisions
+
+| Decision | Why |
+|----------|-----|
+| Target OpenLP **3.1.8** (PyQt5) | Latest stable release. `master` is 4.0 alpha on PySide6. |
+| Load as a **community plugin** from `<DataDir>/contrib/plugins/` | Supported by OpenLP's plugin manager since 3.1.0, so no fork is needed. |
+| Render with **QtWebEngine** (HTML/CSS → PNG) | Already shipped with OpenLP. Gives the AI full artistic freedom with zero new dependencies. |
+| AI returns a template with **placeholders**; our code injects the escaped text | Scripture references and titles must be exact. The AI controls how the text looks, never what it says. |
+| AI HTML is **sanitized** and rendered with JS off and network blocked | AI output is untrusted input. |
+| **Bring your own key** | The project pays no AI costs, and each church uses the provider it prefers. |
+| Runtime deps limited to what OpenLP ships | Packaged OpenLP builds cannot install extra packages. |
+| Hexagonal architecture | The domain and use cases are pure Python and tested without Qt. Qt, OpenLP and HTTP live in adapters. |
+
+## The factory experiment
+
+The goal is to learn how to design agent systems that resolve backlog tasks on their own, and to measure what that costs.
+
+| Stage | What happens |
+|-------|--------------|
+| 1. Product | The human defines the product and decisions with an AI partner (this README). |
+| 2. Backlog | Work is broken into tasks: development, security, quality, testing. See [`odd/tasks/portadas-plugin.md`](odd/tasks/portadas-plugin.md). |
+| 3. Execution | An orchestrator agent runs Organic Driven Development (ODD): explore → plan → TDD implementation by delegated agents → quality gates → work-unit commits. |
+| 4. Measurement | Each task records delegations, rework and gate results in [`docs/factory-log.md`](docs/factory-log.md). |
+
+How this factory was designed, decision by decision:
+
+1. **Concepts before code.** Product flow, data model and AI strategy were settled in conversation before any code existed.
+2. **Verify, don't assume.** OpenLP's plugin loader, Qt binding and display engine were confirmed by reading OpenLP's source, not from memory.
+3. **A small slice first.** The first task proves the riskiest assumption (external plugin loading) before building on it.
+4. **Gates over trust.** Every task closes with tests, lint and a commit. Security and quality are backlog tasks, not afterthoughts.
+
+## Development setup
+
+Tested on Rocky Linux 10.2 with Python 3.12.
+
+```bash
+# OpenLP 3.1.8 from source, next to this repo
+git clone https://gitlab.com/openlp/openlp.git ../openlp
+git -C ../openlp checkout 3.1.8
+python3 -m venv ../openlp/.venv
+../openlp/.venv/bin/pip install -e "../openlp[test]" websocket-client
+# dbus-python and PyICU compile from source: on RHEL-family systems run
+#   sudo dnf install python3-devel libicu-devel dbus-devel gcc-c++
+../openlp/.venv/bin/python ../openlp/run_openlp.py
+```
+
+| Path | Purpose |
+|------|---------|
+| `~/.local/share/openlp/contrib/plugins/` | Community plugins (Linux) |
+| `~/.cache/openlp/openlp.log` | OpenLP log (`-l debug` for verbose output) |
+
+## Status
+
+Work in progress. See the task list in [`odd/tasks/portadas-plugin.md`](odd/tasks/portadas-plugin.md).
+
+## License
+
+GPL-3.0-or-later, same as OpenLP. See [LICENSE](LICENSE).
 
 ## References
 
+- [OpenLP source](https://gitlab.com/openlp/openlp)
 - [Latent Space: Zach Lloyd on software factories](https://www.latent.space/p/software-factories)
 - [Warp Factories announcement](https://fortune.com/press-releases/warp-launches-warp-factories-automate-software-development-2026-08-18/)
 - [Cortex: What is an AI software factory?](https://www.cortex.io/post/what-is-an-ai-software-factory)
