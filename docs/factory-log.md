@@ -41,3 +41,5 @@ One row per backlog task: how the factory executed it and what it cost. It is up
 | T12b | delegated | shared | (rework of T12) | check.sh pass, 1270 tests | n/a | `ed06c00` | Deadlines, proxy env, template depth. Verifier pending |
 | T13 | delegated | 1 (shared T13-T14) | 0 | check.sh pass, 1294 tests, 97.28%; headless OK | 569 | `2190cc5` | Editor AI mode; exceeded the 400 heuristic because tests (258) and docs are included |
 | T14 | delegated | shared | n/a | n/a | 0 | n/a | Stopped before coding: storage/reference design and image provider decisions are open (see feature doc) |
+| T20/T12b verify | delegated adversarial verifier | 1 | n/a | FAIL: 1 medium (trickled Content-Length body and headers bypass the budget), 4 low | 0 | n/a | Chunked trickle, depth, delimiters and store races held; findings in `odd/findings/t12c-findings.md` |
+| T12c | delegated | 1 | 0 | check.sh pass, 1302 tests, 97.18% | 435+/43- | `53b51d1` | RED: both trickle tests hit the 12 s test timeout on the old code. Watcher thread + tracked sockets; reworked after verification |
