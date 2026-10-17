@@ -7,6 +7,12 @@ A personal project with two outcomes:
 
 > This is a personal learning project, not an official OpenLP plugin. It is published as open source so others can study both the plugin and the factory that built it.
 
+## Quick path (end users)
+
+1. If your OpenLP is older than **3.1.8**, upgrade it first: [`docs/upgrade-church.md`](docs/upgrade-church.md) (backup, check, rollback).
+2. Install and enable the plugin on Windows, macOS or Linux: [`docs/install.md`](docs/install.md).
+3. Releases are zips built by `scripts/package.py`; each comes with a SHA-256 checksum file.
+
 ## Quick path (developers)
 
 1. Run OpenLP **3.1.8** from source (see [Development setup](#development-setup)).
