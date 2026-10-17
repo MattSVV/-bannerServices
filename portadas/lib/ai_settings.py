@@ -45,7 +45,6 @@ MODEL_KEY = 'portadas/ai model'
 BASE_URL_KEY = 'portadas/ai base url'
 TIMEOUT_KEY = 'portadas/ai timeout'
 BACKGROUND_KEY = 'portadas/ai background images'
-DATA_NOTICE_KEY = 'portadas/ai data notice accepted'  # the user agreed that cover text is sent to the provider
 
 # OpenLP reads defaults while a plugin is instantiated, so they must exist at import time.
 Settings.extend_default_settings({
@@ -54,7 +53,6 @@ Settings.extend_default_settings({
     BASE_URL_KEY: '',
     TIMEOUT_KEY: DEFAULT_TIMEOUT,
     BACKGROUND_KEY: False,
-    DATA_NOTICE_KEY: False,
 })
 
 
@@ -105,6 +103,16 @@ def key_server_status(secret_store, base_url):
     if not saved:
         return KEY_UNBOUND, None
     return (KEY_OK if saved == wanted else KEY_CHANGED), saved
+
+
+def destination_key(config):
+    """What the first-use notice is bound to: the provider id, plus the server origin for an own server."""
+    if config.provider == COMPATIBLE:
+        try:
+            return f'{COMPATIBLE} {origin_of(config.base_url)}'
+        except ValueError:
+            return COMPATIBLE
+    return config.provider
 
 
 def destination_label(config):

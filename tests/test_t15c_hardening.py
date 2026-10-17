@@ -19,7 +19,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>. #
 """T15c: plain text for messages and tooltips, no web-API search, and a first-use notice before data leaves."""
 import pytest
-from contrib.plugins.portadas.lib.ai_settings import DATA_NOTICE_KEY
 from contrib.plugins.portadas.lib.editform import CoverEditForm
 from contrib.plugins.portadas.lib.mediaitem import PortadasMediaItem
 from contrib.plugins.portadas.lib.settingstab import PortadasSettingsTab
@@ -121,19 +120,19 @@ def ai_form(qtbot, openlp_env, tmp_path):
     return form
 
 
-def settings_flag(openlp_env):
-    return bool(openlp_env.value(DATA_NOTICE_KEY))
+def settings_flag(form):
+    return form.services.notice_store.accepted('openai')
 
 
 def test_the_first_design_asks_before_sending_and_remembers_the_yes(ai_form, qtbot, openlp_env):
     ai_form.answers = [True]
-    assert settings_flag(openlp_env) is False
+    assert settings_flag(ai_form) is False
 
     ai_form.design_button.click()
     qtbot.waitUntil(lambda: ai_form._design_job is None, timeout=5000)
 
     assert len(ai_form.asked) == 1 and len(ai_form.designer.requests) == 1
-    assert settings_flag(openlp_env) is True
+    assert settings_flag(ai_form) is True
 
     ai_form.design_button.click()
     qtbot.waitUntil(lambda: ai_form._design_job is None and len(ai_form.designer.requests) == 2, timeout=5000)
@@ -148,7 +147,7 @@ def test_declining_sends_nothing_and_asks_again_next_time(ai_form, openlp_env):
     ai_form.design_button.click()
 
     assert ai_form.designer.requests == [] and ai_form._design_job is None
-    assert len(ai_form.asked) == 2 and settings_flag(openlp_env) is False
+    assert len(ai_form.asked) == 2 and settings_flag(ai_form) is False
     assert ai_form.design_button.isEnabled()
 
 

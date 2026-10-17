@@ -23,7 +23,6 @@ import json
 import pytest
 from contrib.plugins.portadas.adapters.secret_store import FileSecretStore
 from contrib.plugins.portadas.application.ai_config import AiConfig, origin_of
-from contrib.plugins.portadas.application.ports import DesignError
 from contrib.plugins.portadas.lib.ai_designer import make_designer
 from contrib.plugins.portadas.lib.ai_settings import BASE_URL_KEY, PROVIDER_KEY
 from contrib.plugins.portadas.security import redaction
@@ -122,10 +121,29 @@ def test_the_key_is_never_sent_to_another_server(origins):
     created = []
     store = MemoryStore({'openai_compatible': FAKE}, origins=origins)
 
-    with pytest.raises(DesignError, match='again') as error:
-        make_designer(config(), store, create=lambda cfg, key: created.append(key))
+    make_designer(config(), store, create=lambda cfg, key: created.append(key))
 
-    assert created == [] and FAKE not in str(error.value)
+    assert created == [None]  # a keyless request: the stale key does not leave the machine and does not block
+
+
+def test_a_keyless_local_server_works_while_a_key_for_another_server_is_stored(caplog):
+    created = []
+    store = MemoryStore({'openai_compatible': FAKE}, origins={'openai_compatible': origin_of(EVIL)})
+
+    with caplog.at_level('WARNING'):
+        make_designer(config('http://localhost:11434/v1'), store, create=lambda cfg, key: created.append(key))
+
+    assert created == [None] and FAKE not in caplog.text
+    assert 'another server' in caplog.text
+
+
+def test_a_legacy_key_without_a_recorded_server_is_reported_differently_in_the_log(caplog):
+    store = MemoryStore({'openai_compatible': FAKE})
+
+    with caplog.at_level('WARNING'):
+        make_designer(config(), store, create=lambda cfg, key: None)
+
+    assert 'before server binding' in caplog.text and FAKE not in caplog.text
 
 
 def test_a_server_that_needs_no_key_is_unaffected():
@@ -175,8 +193,10 @@ def test_an_imported_settings_file_cannot_redirect_a_saved_key(make_tab, openlp_
     # What OpenLP's "import settings" does: it writes whatever the file says.
     openlp_env.setValue(BASE_URL_KEY, EVIL)
 
-    with pytest.raises(DesignError, match='again'):
-        make_designer(secret_store=store, create=lambda cfg, key: pytest.fail('the key must not be sent'))
+    created = []
+    make_designer(secret_store=store, create=lambda cfg, key: created.append(key))
+
+    assert created == [None]  # the redirected address never receives the key
 
 
 def test_test_connection_does_not_send_a_stored_key_to_another_server(make_tab, qtbot):

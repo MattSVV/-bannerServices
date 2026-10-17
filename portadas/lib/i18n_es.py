@@ -83,10 +83,11 @@ UI = {
         'Rendering the preview...': 'Generando la vista previa...',
         'Sample title': 'Título de ejemplo',
         'Designing with AI sends the cover text (label, titles, subtitle, key verse, readings) and your style hint to '
-        '{destination}, under its data policy. Nothing else leaves this computer. You are asked only this once.':
+        '{destination}, under its data policy. Nothing else leaves this computer. You are asked once for each provider '
+        'or server.':
             'Diseñar con IA envía el texto de la portada (etiqueta, títulos, subtítulo, versículo clave, lecturas) y '
-            'su indicación de estilo a {destination}, según su política de datos. Nada más sale de este equipo. Solo '
-            'se le pregunta esta vez.',
+            'su indicación de estilo a {destination}, según su política de datos. Nada más sale de este equipo. Se le '
+            'pregunta una vez por cada proveedor o servidor.',
         'Nothing was sent to the AI.': 'No se envió nada a la IA.',
         'Save': 'Guardar',
         'Send the cover text to the AI?': '¿Enviar el texto de la portada a la IA?',
@@ -105,10 +106,6 @@ UI = {
         'The cover is not valid': 'La portada no es válida',
         'The preview appears here.': 'La vista previa aparece aquí.',
         'The preview could not be rendered: {error}': 'No se pudo generar la vista previa: {error}',
-        'The saved API key was entered for another server. Enter the key again in Settings > Configure OpenLP > '
-        'Covers.':
-            'La clave de API guardada se escribió para otro servidor. Escríbala de nuevo en Configuración > '
-            'Configurar OpenLP > Portadas.',
         'The saved API key could not be read. Enter it again in Settings > Configure OpenLP > Covers.':
             'No se pudo leer la clave de API guardada. Escríbala de nuevo en Configuración > Configurar OpenLP > '
             'Portadas.',

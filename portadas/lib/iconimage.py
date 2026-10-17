@@ -23,12 +23,13 @@ import stat
 
 from PyQt5 import QtCore, QtGui, QtSvg
 
-from ..application.icon_upload import MAX_PNG_DIMENSION, png_size
+from ..application.icon_upload import MAX_PNG_DIMENSION, png_decode_bytes, png_size
 from ..domain.cover import CoverError
 from ..security.html_policy import MAX_PNG_ICON_BYTES, PNG_SIGNATURE, sanitize_svg
 
 MAX_PNG_FILE_BYTES = 20 * 1024 * 1024  # an uploaded file is read only up to this size
-MAX_DECODE_PIXELS = 25_000_000  # an image announcing more pixels is refused before it is decoded (~100 MB as RGBA)
+# An image that would need more once decoded is refused first: 25M pixels, or 12.5M at 16 bits per channel.
+MAX_DECODE_BYTES = 100_000_000
 ICON_SIDES = (256, 192, 128, 96, 64)  # an uploaded PNG is scaled down until it fits the size cap
 PICKER_SIZE = 64
 
@@ -73,7 +74,7 @@ def prepare_png_icon(path):
     if not raw.startswith(PNG_SIGNATURE):
         raise CoverError('The file is not a PNG image.')
     width, height = png_size(raw)
-    if width <= 0 or height <= 0 or width * height > MAX_DECODE_PIXELS:
+    if width <= 0 or height <= 0 or png_decode_bytes(raw) > MAX_DECODE_BYTES:
         raise CoverError('The file is not a usable image.')
     image = QtGui.QImage.fromData(raw, 'PNG')
     if image.isNull():

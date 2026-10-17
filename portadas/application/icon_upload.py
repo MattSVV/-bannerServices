@@ -110,6 +110,16 @@ def png_size(data):
     raise CoverError('The PNG image is incomplete.')
 
 
+def png_decode_bytes(data):
+    """
+    Memory a PNG needs once decoded, from its header: 4 bytes per pixel, 8 when it has 16 bits per channel (Qt then
+    decodes to a 64-bit format). Call it on bytes ``png_size`` accepted.
+    """
+    width, height = png_size(data)
+    bit_depth = data[24]  # IHDR: width(4) height(4) bit depth(1) ... after the 8-byte signature and 8-byte chunk head
+    return width * height * (8 if bit_depth == 16 else 4)
+
+
 def _blocking_problems(result):
     problems = [violation.message for violation in result.violations if violation.fatal]
     for violation in result.violations:

@@ -33,6 +33,7 @@ from contrib.plugins.portadas.application.ports import (
     RenderResult,
 )
 from contrib.plugins.portadas.application.template_catalog import TemplateCatalog
+from contrib.plugins.portadas.lib.ai_notice import FileNoticeStore
 from contrib.plugins.portadas.lib.services import PortadasServices
 
 
@@ -130,4 +131,5 @@ def make_services(tmp_path, renderer=None, repository=None):
     return PortadasServices(repository=repository,
                             creator=CreateCoverFromTemplate(templates, icons, renderer, repository),
                             renderer=renderer, templates=templates, icons=icons,
-                            thumbnail_dir=tmp_path / 'thumbnails')
+                            thumbnail_dir=tmp_path / 'thumbnails',
+                            notice_store=FileNoticeStore(tmp_path / 'ai-notice.json'))

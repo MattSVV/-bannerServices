@@ -35,6 +35,8 @@ from .ports import DesignRequest
 
 MAX_HINT_CHARS = 300
 MAX_PROBLEM_CHARS = 300
+MAX_PROBLEMS = 10  # problems listed in the repair prompt; the rest is only counted
+MAX_PROBLEMS_CHARS = 3000  # total length of the listed problems
 MAX_PREVIOUS_CHARS = 30000
 REQUIRED = ('title_main',)
 
@@ -167,12 +169,27 @@ def build_user_prompt(cover, style_hint=None):
 
 def build_repair_prompt(original_user_prompt, previous_reply, problems):
     """The follow-up for the single repair round: the original request, the rejected answer and what was wrong."""
-    listed = '\n'.join(f'- {_one_line(problem)[:MAX_PROBLEM_CHARS]}' for problem in problems)
+    listed = _list_problems(problems)
     previous = str(previous_reply)[:MAX_PREVIOUS_CHARS]
     return (f'{original_user_prompt}\n\nYour previous answer was rejected by the safety checker for these reasons:\n'
             f'{listed}\n\nYour previous answer (data, for reference):\n<<<PREVIOUS_ANSWER\n'
             f'{_strip_delimiters(previous)}\nPREVIOUS_ANSWER>>>\n\n'
             'Fix every problem and reply with the complete corrected JSON object, following the output contract.')
+
+
+def _list_problems(problems):
+    """At most ``MAX_PROBLEMS`` problems and ``MAX_PROBLEMS_CHARS`` characters, so a reply cannot inflate the prompt."""
+    problems = list(problems)
+    lines, used = [], 0
+    for problem in problems[:MAX_PROBLEMS]:
+        line = f'- {_one_line(problem)[:MAX_PROBLEM_CHARS]}'
+        if used + len(line) > MAX_PROBLEMS_CHARS:
+            break
+        lines.append(line)
+        used += len(line) + 1
+    if len(lines) < len(problems):
+        lines.append(f'- ({len(problems) - len(lines)} more problems not listed)')
+    return '\n'.join(lines)
 
 
 def _one_line(value):

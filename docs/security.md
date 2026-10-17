@@ -87,8 +87,10 @@ that the key never appears in OpenLP's settings or their export, in logs, in the
   logs and error messages.
 - **Key bound to its server (SEC-003).** The key of an OpenAI-compatible server is stored together with the normalized
   origin it was entered for (`scheme://host[:port]`, in the secrets file as `origins`). It is sent only while the
-  configured address has that same origin; otherwise the editor and *Test connection* refuse and ask for the key again,
-  and the settings tab shows the host the key goes to. This closes the route where an imported `OpenLP.conf` changes
+  configured address has that same origin; otherwise *Test connection* refuses and asks for the key again, the editor sends the request **without** a key
+  (a server that needs none, such as a local Ollama, keeps working; one that needs a key answers with its own error until
+  the key is entered again; the log tells "entered for another server" from "saved before server binding"), and the
+  settings tab shows the host the key goes to. This closes the route where an imported `OpenLP.conf` changes
   `portadas/ai base url` and the stored key follows it to the attacker. **Migration:** a key saved by an earlier build
   has no origin and is treated as unverified: it is not sent until the user types it again (once) in the settings tab.
 
@@ -146,6 +148,24 @@ re-sanitised when the file is read (a stored template that no longer passes is d
 falling back to its `template_id`) and again in `CreateCoverFromTemplate.compose`. There is no path involved, so there is
 no traversal surface: relative URLs resolve from the built-in folder named by `template_id` (`base_dir`), which is the
 same allowlisted root the renderer's request filter already enforces.
+
+### T15d: second verification (LOW and INFO)
+
+| Finding | Fix |
+|---------|-----|
+| First-use notice was one global flag | Bound to provider and server origin, kept in `ai-notice.json` outside OpenLP settings (see above) |
+| Repair prompt unbounded in problem count | At most 10 problems and 3,000 characters listed, the rest only counted |
+| Stale "Designing..." status after cancel by template pick | The status is cleared when the job is stopped |
+| 16-bit PNG decode peaked above the documented ~100 MB | The bound is in decoded bytes (4 per pixel, 8 at 16 bits per channel; limit 100,000,000), read from the IHDR |
+| Stale key blocked a keyless server | The key is dropped, not sent, and the request goes out keyless |
+
+Residuals from that verification, accepted and documented (`odd/findings/t15d-findings.md`): the stored-icon policy
+checks only the PNG signature of a data URI (Qt and libpng refuse the hostile cases safely; a `png_size` check there
+would be defence in depth); `localize` is quadratic on very long text, which no caller passes (messages are at most
+about 220 characters); the key and its origin are two reads (a writer replacing the key between them is needed within
+microseconds); error messages echo offending text, so a lone surrogate typed in a field can reach a label or a UTF-8
+log handler (log handlers swallow encode errors); the Windows ADS rule only fires for paths with a drive letter and
+needs a Windows run.
 
 ### Residual risks (accepted)
 
@@ -208,8 +228,12 @@ An independent read-only review of `efa6e78` found no CRITICAL or HIGH issue, 3 
 Other changes from the review: message boxes and library tooltips show user and AI text as plain text (tooltips are
 escaped, because Qt has no plain mode for them); the library no longer advertises `has_search` (OpenLP's web API would
 call a `search` the plugin does not have and answer 500); and the first *Design with AI* asks once, naming the
-destination, before any text is sent (the answer is kept in the plugin settings as `portadas/ai data notice accepted`;
-declining sends nothing and asks again next time).
+destination, before any text is sent. The answer is bound to the destination (the provider id, plus the origin of an
+OpenAI-compatible server) and kept in a private file, `<DataDir>/portadas/ai-notice.json`, not in OpenLP settings: a
+settings import writes any key into the settings store, so a flag kept there could be pre-accepted by a file the user was
+handed. Changing the provider or the server asks again; at most 20 destinations are remembered; the old
+`portadas/ai data notice accepted` setting is ignored (users are asked once more after upgrading); declining sends
+nothing and asks again next time.
 
 ### Settings import can redirect a key
 

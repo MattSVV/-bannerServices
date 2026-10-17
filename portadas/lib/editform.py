@@ -34,7 +34,6 @@ import uuid
 from pathlib import Path
 
 from openlp.core.common.i18n import translate
-from openlp.core.common.settings import Settings
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from ..application.design_cover import DesignCoverWithAI
@@ -46,7 +45,7 @@ from ..domain.errors import DomainError
 from ..domain.scripture import MAX_REFERENCE_CHARS, parse_reference
 from ..security.html_policy import sanitize_svg
 from ..security.redaction import redact
-from .ai_settings import DATA_NOTICE_KEY, destination_label, load_ai_config
+from .ai_settings import destination_key, destination_label, load_ai_config
 from .background import run_in_background
 from .dialogs import message_box, plain_tooltip
 from .i18n import localize
@@ -614,6 +613,7 @@ class CoverEditForm(QtWidgets.QDialog):
         self._design_job.cancel()
         self._design_job = None
         self._set_designing(False)
+        self._set_status('')  # the "Designing..." text must not outlive the job
         return True
 
     def _set_designing(self, designing):
@@ -645,11 +645,14 @@ class CoverEditForm(QtWidgets.QDialog):
             self._set_status(translate('PortadasPlugin.EditForm', 'AI design is not available (could not start the '
                                        'designer).'), error=True)
             return
-        if not Settings().value(DATA_NOTICE_KEY):
-            if not self.confirm_data_use(destination_label(load_ai_config())):
+        config, notices = load_ai_config(), self.services.notice_store
+        destination = destination_key(config)
+        if notices is None or not notices.accepted(destination):
+            if not self.confirm_data_use(destination_label(config)):
                 self._set_status(translate('PortadasPlugin.EditForm', 'Nothing was sent to the AI.'))
                 return
-            Settings().setValue(DATA_NOTICE_KEY, True)
+            if notices is not None:
+                notices.accept(destination)
         hint = self.hint_edit.text()
         self._set_status(translate('PortadasPlugin.EditForm', 'Designing with the AI. This can take a minute...'))
         self._design_job = run_in_background(lambda: (cover, use_case.design(cover, hint)), self._design_done,
@@ -699,7 +702,8 @@ class CoverEditForm(QtWidgets.QDialog):
             translate('PortadasPlugin.EditForm', 'Send the cover text to the AI?'),
             translate('PortadasPlugin.EditForm', 'Designing with AI sends the cover text (label, titles, subtitle, key '
                       'verse, readings) and your style hint to {destination}, under its data policy. Nothing else '
-                      'leaves this computer. You are asked only this once.').format(destination=destination),
+                      'leaves this computer. You are asked once for each provider or server.'
+                      ).format(destination=destination),
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
         return answer == QtWidgets.QMessageBox.Yes
 

@@ -41,6 +41,7 @@ class PortadasServices:
     icons: object
     thumbnail_dir: Path
     template_thumbnails: dict = field(default_factory=dict)  # template id -> PNG bytes, rendered lazily
+    notice_store: object = None  # ``FileNoticeStore``-like; None means the AI data notice is asked every time
     designer_factory: object = None  # ``callable() -> CoverDesigner`` (may raise DesignError); None disables AI mode
 
     def close(self):
@@ -66,7 +67,9 @@ def build_services(data_dir, renderer=None):
     templates, icons = TemplateCatalog(), IconCatalog()
     repository = FileCoverRepository(data_dir)
     from .ai_designer import make_designer
+    from .ai_notice import FileNoticeStore
     return PortadasServices(repository=repository,
                             creator=CreateCoverFromTemplate(templates, icons, renderer, repository),
                             renderer=renderer, templates=templates, icons=icons,
-                            thumbnail_dir=data_dir / 'thumbnails', designer_factory=make_designer)
+                            thumbnail_dir=data_dir / 'thumbnails', designer_factory=make_designer,
+                            notice_store=FileNoticeStore(data_dir / 'ai-notice.json'))
