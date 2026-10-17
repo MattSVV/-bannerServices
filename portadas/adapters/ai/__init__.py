@@ -26,7 +26,7 @@ from ...application.ai_config import COMPATIBLE, AiConfig
 from ...application.ports import DesignError
 
 
-def create_designer(config, api_key, session=None, sleep=None):
+def create_designer(config, api_key, session=None, sleep=None, clock=None):
     """
     The designer for ``config.provider``.
 
@@ -34,6 +34,7 @@ def create_designer(config, api_key, session=None, sleep=None):
     :param api_key: the key from the secret store, or ``None``.
     :param session: a ``requests.Session``-like object (tests); a fresh session otherwise.
     :param sleep: replaces ``time.sleep`` for the retry backoff (tests).
+    :param clock: replaces ``time.monotonic`` for the total deadline (tests).
     :raises DesignError: for an unknown provider.
     """
     from .anthropic import AnthropicDesigner
@@ -43,7 +44,8 @@ def create_designer(config, api_key, session=None, sleep=None):
     if not isinstance(config, AiConfig):
         raise DesignError('The AI settings are missing.')
     common = dict(api_key=api_key, model=config.effective_model if config.provider in _KNOWN else '',
-                  timeout=config.bounded_timeout if config.provider in _KNOWN else 60, session=session, sleep=sleep)
+                  timeout=config.bounded_timeout if config.provider in _KNOWN else 60, session=session, sleep=sleep,
+                  clock=clock)
     if config.provider == 'openai':
         return OpenAiDesigner(**common)
     if config.provider == 'anthropic':
@@ -58,6 +60,6 @@ def create_designer(config, api_key, session=None, sleep=None):
 _KNOWN = ('openai', 'anthropic', 'gemini', COMPATIBLE)
 
 
-def test_connection(config, api_key, session=None, sleep=None):
+def test_connection(config, api_key, session=None, sleep=None, clock=None):
     """Check the key, model and address with one cheap request. Returns a message; raises ``DesignError``."""
-    return create_designer(config, api_key, session=session, sleep=sleep).test_connection()
+    return create_designer(config, api_key, session=session, sleep=sleep, clock=clock).test_connection()

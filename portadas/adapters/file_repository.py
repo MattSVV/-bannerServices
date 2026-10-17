@@ -201,7 +201,7 @@ class FileCoverRepository(CoverRepository):
                 continue
             try:
                 covers.append(self._load(path.stem))
-            except (OSError, CoverDataError, ValueError) as error:
+            except Exception as error:  # noqa: BLE001 - one damaged entry must never hide every other cover
                 log.warning('Skipping unreadable cover "%s": %s', path.stem, error)
         covers.sort(key=lambda cover: cover.id)  # stable: ties on the timestamp keep id order
         covers.sort(key=lambda cover: cover.created_at, reverse=True)

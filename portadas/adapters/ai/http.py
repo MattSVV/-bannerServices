@@ -23,8 +23,13 @@ Shared HTTP plumbing of the AI adapters: one bounded, retrying, size-capped JSON
 
 Rules every provider call follows (docs/security.md):
 
-* the timeout is ``AiConfig.bounded_timeout``; redirects are never followed (a custom header such as ``x-api-key``
-  would travel to the new host);
+* the timeout is ``AiConfig.bounded_timeout`` per attempt for connecting and for each wait on the socket, and the whole
+  call (every attempt, every backoff and the streaming of the body) must finish within ``TOTAL_BUDGET_FACTOR`` times
+  that timeout: a server that trickles one byte a second cannot keep a request alive. The call also stops early when
+  its job was cancelled (``application/cancellation.py``);
+* proxy variables and ``.netrc`` are ignored (``trust_env`` is off): a proxy would see the bearer key in clear text and
+  ``.netrc`` could replace the ``Authorization`` header. A proxy, if ever wanted, must be an explicit setting;
+* redirects are never followed (a custom header such as ``x-api-key`` would travel to the new host);
 * 429 and 5xx are retried at most ``MAX_RETRIES`` times, with an exponential or ``Retry-After`` backoff capped at
   ``MAX_BACKOFF`` seconds;
 * the response is read in chunks and refused beyond ``MAX_RESPONSE_BYTES``;
@@ -39,6 +44,8 @@ import unicodedata
 
 import requests
 
+from ...application import cancellation
+from ...application.ai_config import KEY_PATTERN
 from ...application.design_parse import parse_design_reply
 from ...application.ports import CoverDesigner, DesignError, UnusableReply
 from ...security.redaction import redact, register_secret
@@ -48,11 +55,11 @@ log = logging.getLogger(__name__)
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_RETRIES = 2
 MAX_BACKOFF = 10.0
+TOTAL_BUDGET_FACTOR = 2  # the whole call may take at most this many times the configured timeout
 CONNECT_TIMEOUT = 10
 MAX_PROVIDER_MESSAGE = 200
 RETRYABLE = frozenset({429, 500, 502, 503, 504, 529})
 MODEL_PATTERN = re.compile(r'\A[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}\Z')
-KEY_PATTERN = re.compile(r'\A[\x21-\x7e]{6,500}\Z')  # printable ASCII without spaces: safe as a header value
 
 
 class HttpDesigner(CoverDesigner):
@@ -65,16 +72,18 @@ class HttpDesigner(CoverDesigner):
     :param timeout: seconds, already bounded (``AiConfig.bounded_timeout``).
     :param session: a ``requests.Session``-like object with ``request``; a fresh session by default.
     :param sleep: the sleep function used for backoff (replaced in tests).
+    :param clock: a monotonic clock in seconds (replaced in tests).
     """
     provider = 'the AI provider'
     key_required = True
 
-    def __init__(self, api_key, model, timeout, session=None, sleep=None):
+    def __init__(self, api_key, model, timeout, session=None, sleep=None, clock=None):
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
-        self.session = session if session is not None else requests.Session()
+        self.session = session if session is not None else _new_session()
         self.sleep = sleep if sleep is not None else time.sleep
+        self.clock = clock if clock is not None else time.monotonic
         if isinstance(api_key, str):
             register_secret(api_key)  # the exact key is redacted from any text this process logs from now on
 
@@ -114,17 +123,20 @@ class HttpDesigner(CoverDesigner):
 
     # --- one call ------------------------------------------------------------------------------------------------
     def _send(self, method, url, headers, body):
+        deadline = self.clock() + self.timeout * TOTAL_BUDGET_FACTOR
         for attempt in range(MAX_RETRIES + 1):
-            response = self._request(method, url, headers, body)
+            response = self._request(method, url, headers, body, deadline)
             try:
                 status = response.status_code
                 log.debug('%s answered HTTP %s (attempt %d)', self.provider, status, attempt + 1)
                 if status in RETRYABLE and attempt < MAX_RETRIES:
                     delay = self._backoff(response, attempt)
+                    if delay >= self._remaining(deadline):
+                        raise self._too_slow()  # the pause alone would use up what is left of the budget
                     response.close()
                     self.sleep(delay)
                     continue
-                raw = self._read(response)
+                raw = self._read(response, deadline)
                 if 200 <= status < 300:
                     return self._load(raw)
                 raise DesignError(self._status_message(status, raw))
@@ -132,13 +144,26 @@ class HttpDesigner(CoverDesigner):
                 response.close()
         raise DesignError(f'{self.provider} did not answer.')  # pragma: no cover - the loop always returns or raises
 
-    def _request(self, method, url, headers, body):
+    def _remaining(self, deadline):
+        """Seconds left of the total budget; raises when the job was cancelled or nothing is left."""
+        if cancellation.is_cancelled():
+            raise DesignError('The request was cancelled.')
+        left = deadline - self.clock()
+        if left <= 0:
+            raise self._too_slow()
+        return left
+
+    def _too_slow(self):
+        return DesignError(f'{self.provider} did not answer in time. Try again, or raise the request timeout in '
+                           'the Covers settings.')
+
+    def _request(self, method, url, headers, body, deadline):
+        left = self._remaining(deadline)
         try:
             return self.session.request(method, url, headers=headers, json=body, stream=True, allow_redirects=False,
-                                        timeout=(min(CONNECT_TIMEOUT, self.timeout), self.timeout))
+                                        timeout=(min(CONNECT_TIMEOUT, self.timeout, left), min(self.timeout, left)))
         except requests.exceptions.Timeout:
-            raise DesignError(f'{self.provider} did not answer in time. Try again, or raise the request timeout in '
-                              'the Covers settings.') from None
+            raise self._too_slow() from None
         except requests.exceptions.SSLError:
             raise DesignError(f'A secure connection to {self.provider} could not be made.') from None
         except requests.exceptions.ConnectionError:
@@ -154,10 +179,10 @@ class HttpDesigner(CoverDesigner):
         except (TypeError, ValueError):
             return float(2 ** attempt)
 
-    @staticmethod
-    def _read(response):
+    def _read(self, response, deadline):
         chunks, size = [], 0
         for chunk in response.iter_content(8192):
+            self._remaining(deadline)  # a wall-clock check per chunk: ``requests`` only times each wait on the socket
             size += len(chunk)
             if size > MAX_RESPONSE_BYTES:
                 raise DesignError('The answer of the AI provider is too large and was discarded.')
@@ -204,6 +229,12 @@ class HttpDesigner(CoverDesigner):
             return ''
         clean = ''.join(' ' if unicodedata.category(char) in ('Cc', 'Cf', 'Zl', 'Zp') else char for char in message)
         return redact(' '.join(clean.split()))[:MAX_PROVIDER_MESSAGE]
+
+
+def _new_session():
+    session = requests.Session()
+    session.trust_env = False  # no HTTP(S)_PROXY, NO_PROXY, REQUESTS_CA_BUNDLE or .netrc from the environment
+    return session
 
 
 def text_parts(content):

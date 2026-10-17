@@ -229,3 +229,21 @@ def test_a_designed_cover_renders_with_our_text(tmp_path):
     html, _ = creator.compose(designed.apply_to(original))
 
     assert 'Resistir &lt;b&gt;ya&lt;/b&gt;' in html and '<svg' in html and '{{' not in html
+
+
+def test_a_bad_icon_then_a_failed_repair_keeps_the_good_first_template():
+    bad_icon = '<svg><text>hello</text></svg>'
+    designer = FakeDesigner(reply(icon=bad_icon), reply(html='<div>Texto fijo</div>'))
+
+    designed = DesignCoverWithAI(designer).design(cover())
+
+    assert designed.template_html and designed.icon is None and designed.repaired is False
+    assert len(designer.requests) == 2
+
+
+def test_a_hostile_deeply_nested_reply_is_a_rejection_not_a_crash():
+    deep = reply(html='<div>' * 5000 + '{{title_main}}' + '</div>' * 5000)
+    designer = FakeDesigner(deep, deep)
+
+    with pytest.raises(DesignError, match='could not be made safe'):
+        DesignCoverWithAI(designer).design(cover())

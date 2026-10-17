@@ -171,7 +171,7 @@ def build_repair_prompt(original_user_prompt, previous_reply, problems):
     previous = str(previous_reply)[:MAX_PREVIOUS_CHARS]
     return (f'{original_user_prompt}\n\nYour previous answer was rejected by the safety checker for these reasons:\n'
             f'{listed}\n\nYour previous answer (data, for reference):\n<<<PREVIOUS_ANSWER\n'
-            f'{_DELIMITERS.sub("", previous)}\nPREVIOUS_ANSWER>>>\n\n'
+            f'{_strip_delimiters(previous)}\nPREVIOUS_ANSWER>>>\n\n'
             'Fix every problem and reply with the complete corrected JSON object, following the output contract.')
 
 
@@ -179,4 +179,13 @@ def _one_line(value):
     """Untrusted text as one clean line: no control characters, no block delimiters, whitespace collapsed."""
     text = ''.join(char if unicodedata.category(char) not in ('Cc', 'Cf', 'Zl', 'Zp') else ' '
                    for char in str(value or ''))
-    return _SPACES.sub(' ', _DELIMITERS.sub('', text)).strip()
+    return _SPACES.sub(' ', _strip_delimiters(text)).strip()
+
+
+def _strip_delimiters(text):
+    """Remove ``<<<`` and ``>>>`` runs until none is left: removing one can join its neighbours into a new one."""
+    while True:
+        stripped = _DELIMITERS.sub('', text)
+        if stripped == text:
+            return text
+        text = stripped

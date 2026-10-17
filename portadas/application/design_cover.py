@@ -76,6 +76,8 @@ class DesignCoverWithAI:
         repair = DesignRequest(request.system_prompt, build_repair_prompt(
             request.user_prompt, outcome.raw, outcome.problems))
         second = self._attempt(repair)
+        if second.template is None and outcome.template is not None:
+            return outcome.result(repaired=False)  # only the icon was bad: a failed repair must not lose the template
         if second.template is None:
             reasons = '; '.join(second.problems[:3])
             raise DesignError(f'The AI design could not be made safe after one correction ({reasons}). '

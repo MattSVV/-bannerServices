@@ -29,8 +29,8 @@ class OpenAiCompatibleDesigner(OpenAiDesigner):
     key_required = False
     token_field = 'max_tokens'  # noqa: S105 - the older name every compatible server understands
 
-    def __init__(self, api_key, model, timeout, base_url, session=None, sleep=None):
-        super().__init__(api_key, model, timeout, session, sleep)
+    def __init__(self, api_key, model, timeout, base_url, session=None, sleep=None, clock=None):
+        super().__init__(api_key, model, timeout, session, sleep, clock)
         try:
             self.base_url = validate_base_url(base_url).rstrip('/')
         except ValueError as error:

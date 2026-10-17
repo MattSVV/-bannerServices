@@ -31,9 +31,9 @@ MAX_OUTPUT_TOKENS = 16000
 class GeminiDesigner(HttpDesigner):
     provider = 'Google Gemini'
 
-    def __init__(self, api_key, model, timeout, session=None, sleep=None):
+    def __init__(self, api_key, model, timeout, session=None, sleep=None, clock=None):
         model = model[len('models/'):] if isinstance(model, str) and model.startswith('models/') else model
-        super().__init__(api_key, model, timeout, session, sleep)
+        super().__init__(api_key, model, timeout, session, sleep, clock)
 
     def _check_ready(self):
         if isinstance(self.model, str) and '/' in self.model:

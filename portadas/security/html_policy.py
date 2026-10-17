@@ -405,7 +405,9 @@ def _prepare(untrusted, tags, allow_style, png_images=False):
     if builder.elements > MAX_ELEMENTS:
         violations.append(Violation('too-many-elements', f'The template has more than {MAX_ELEMENTS} elements.', True))
     if builder.too_deep:
+        # Fatal, and the tree is never walked: the walks below recurse and thousands of levels would exhaust the stack.
         violations.append(Violation('too-deep', f'The template is nested deeper than {MAX_DEPTH} levels.', True))
+        return None, violations
     return builder, violations
 
 

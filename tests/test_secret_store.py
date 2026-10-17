@@ -190,7 +190,7 @@ def test_the_write_is_atomic(store, monkeypatch):
     assert FAKE not in str(error.value) and 'NEW' not in str(error.value)
     monkeypatch.undo()
     assert store.get_api_key('openai') == FAKE  # the old content is intact
-    assert [item.name for item in store.directory.iterdir()] == [store.path.name]  # no temp file left behind
+    assert sorted(item.name for item in store.directory.iterdir()) == ['.lock', store.path.name]  # no temp file left
 
 
 def test_the_file_is_not_world_readable_even_while_it_is_being_written(store, monkeypatch):
@@ -312,3 +312,59 @@ def test_default_cipher_depends_on_the_platform(tmp_path, monkeypatch):
     assert FileSecretStore(tmp_path / 'a', platform='posix').cipher is None
     monkeypatch.setattr(module, 'DpapiCipher', lambda: 'dpapi')
     assert FileSecretStore(tmp_path / 'b', platform='nt').cipher == 'dpapi'
+
+
+# --- T12b: concurrency, corrupt files, symlinked directory, key validation --------------------------------------------
+
+def test_concurrent_writers_do_not_lose_each_others_keys(store):
+    import threading
+    providers = ['openai', 'anthropic', 'gemini', 'openai_compatible']
+    barrier = threading.Barrier(len(providers))
+    errors = []
+
+    def write(provider):
+        try:
+            barrier.wait(5)
+            store.set_api_key(provider, f'key-for-{provider}-0123456789')
+        except Exception as error:  # noqa: BLE001 - reported by the assertion below
+            errors.append(error)
+
+    threads = [threading.Thread(target=write, args=(name,)) for name in providers]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+
+    assert not errors and not any(thread.is_alive() for thread in threads)
+    assert {name: store.get_api_key(name) for name in providers} == {name: f'key-for-{name}-0123456789'
+                                                                    for name in providers}
+
+
+def test_a_corrupt_file_is_kept_as_a_backup_instead_of_being_silently_overwritten(store):
+    store.set_api_key('openai', FAKE)
+    store.path.write_text('{ this is not json', encoding='utf-8')
+    os.chmod(store.path, 0o600)
+
+    store.set_api_key('gemini', 'gem-key-123456')
+
+    backup = store.directory / 'api-keys.corrupt'
+    assert backup.read_text(encoding='utf-8') == '{ this is not json'
+    assert store.get_api_key('gemini') == 'gem-key-123456'
+
+
+def test_a_symlinked_secrets_directory_is_refused_and_its_target_left_alone(tmp_path):
+    target = tmp_path / 'elsewhere'
+    target.mkdir(mode=0o755)
+    link = tmp_path / 'secrets'
+    link.symlink_to(target, target_is_directory=True)
+
+    with pytest.raises(SecretStoreError):
+        FileSecretStore(link).set_api_key('openai', FAKE)
+
+    assert stat.S_IMODE(os.stat(target).st_mode) == 0o755 and not any(target.iterdir())
+
+
+@pytest.mark.parametrize('key', ['sk-ключ-with-non-ascii-0123', 'abc', 'x' * 501, 'sk-\x7f-0123456789'])
+def test_keys_the_adapters_would_refuse_are_not_saved(store, key):
+    with pytest.raises(ValueError):
+        store.set_api_key('openai', key)

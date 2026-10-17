@@ -435,3 +435,123 @@ def test_the_default_model_is_used_when_the_field_is_empty():
 def test_an_unknown_provider_is_refused():
     with pytest.raises(DesignError):
         create_designer(AiConfig('evilcorp', '', '', 60, False), KEY)
+
+
+# --- T12b: total deadline, cancellation, no proxy/netrc from the environment ------------------------------------------
+
+class FakeClock:
+    """A monotonic clock the test advances by hand."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+class TricklingResponse(FakeResponse):
+    """A body that arrives one small chunk per second of (fake) time and never ends."""
+
+    def __init__(self, clock, chunks=10000):
+        super().__init__(200, {})
+        self.clock, self.limit = clock, chunks
+
+    def iter_content(self, chunk_size=8192):
+        for _ in range(self.limit):
+            self.chunks_read += 1
+            self.clock.now += 1.0
+            yield b' '
+
+
+def with_clock(provider, clock, *script, timeout=5):
+    session, sleeper = FakeSession(*script), Sleeper()
+    designer = create_designer(config(provider, '', timeout), KEY, session=session, sleep=sleeper, clock=clock)
+    return designer, session, sleeper
+
+
+def test_a_body_that_trickles_in_is_cut_off_by_a_total_deadline():
+    clock = FakeClock()
+    response = TricklingResponse(clock)
+    designer, _, _ = with_clock('openai', clock, response)
+
+    with pytest.raises(DesignError, match='in time'):
+        designer.design(REQUEST)
+
+    assert response.chunks_read <= 11 and response.closed  # 5 s timeout x 2: never read to the end
+
+
+def test_the_deadline_covers_the_whole_retry_loop_including_the_backoff():
+    clock = FakeClock()
+    designer, session, sleeper = with_clock('openai', clock, FakeResponse(503, {}, {'Retry-After': '8'}))
+    sleeper_calls = sleeper.delays
+
+    def advancing_sleep(seconds):
+        sleeper_calls.append(seconds)
+        clock.now += seconds
+
+    designer.sleep = advancing_sleep
+
+    with pytest.raises(DesignError, match='in time'):
+        designer.design(REQUEST)
+
+    assert len(session.calls) <= 2  # 8 s of backoff already used the 10 s budget of a 5 s timeout
+
+
+def test_each_request_is_given_only_the_time_that_is_left():
+    clock = FakeClock()
+    designer, session, _ = with_clock('openai', clock, ok('openai'))
+    clock.now = 3.0
+
+    designer.design(REQUEST)
+
+    connect, read = session.calls[0]['timeout']
+    assert connect <= 5 and read <= 5
+
+
+def test_a_cancelled_call_stops_reading_and_closes_the_response():
+    from contrib.plugins.portadas.application import cancellation
+    clock = FakeClock()
+    response = TricklingResponse(clock)
+    designer, _, _ = with_clock('openai', clock, response, timeout=60)
+    event = cancellation.CancelEvent()
+    seen = []
+
+    original = response.iter_content
+
+    def cancelling(chunk_size=8192):
+        for chunk in original(chunk_size):
+            seen.append(1)
+            if len(seen) == 3:
+                event.set()
+            yield chunk
+
+    response.iter_content = cancelling
+
+    with cancellation.bound(event):
+        with pytest.raises(DesignError, match='cancel'):
+            designer.design(REQUEST)
+
+    assert response.chunks_read <= 4 and response.closed
+
+
+def test_a_call_that_was_cancelled_before_it_started_sends_nothing():
+    from contrib.plugins.portadas.application import cancellation
+    designer, session, _ = make('openai', ok('openai'))
+    event = cancellation.CancelEvent()
+    event.set()
+
+    with cancellation.bound(event):
+        with pytest.raises(DesignError, match='cancel'):
+            designer.design(REQUEST)
+
+    assert session.calls == []
+
+
+def test_the_default_session_ignores_proxy_variables_and_netrc(monkeypatch):
+    monkeypatch.setenv('HTTPS_PROXY', 'http://proxy.invalid:3128')
+    monkeypatch.setenv('HTTP_PROXY', 'http://proxy.invalid:3128')
+    designer = create_designer(config('openai'), KEY)
+
+    assert designer.session.trust_env is False
+    settings = designer.session.merge_environment_settings('https://api.openai.com/v1', {}, None, None, None)
+    assert settings['proxies'] == {}

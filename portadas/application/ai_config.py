@@ -19,9 +19,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>. #
 ##########################################################################
 """AI settings that are not secret: providers, default models, timeout bounds and the base URL policy. Pure Python."""
+import re
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+# The one shape of API key every layer accepts: printable ASCII without spaces, so it is safe as a header value.
+KEY_PATTERN = re.compile(r'\A[\x21-\x7e]{6,500}\Z')
 PROVIDERS = ('openai', 'anthropic', 'gemini', 'openai_compatible')
 COMPATIBLE = 'openai_compatible'
 

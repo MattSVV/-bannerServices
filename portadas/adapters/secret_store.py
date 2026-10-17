@@ -28,15 +28,23 @@ That protects against other users of the machine, not against malware running as
 unattended program can. On Windows the content is additionally encrypted with DPAPI, bound to the signed-in user. The OS
 keyring is not used because it is not in the dependency budget.
 """
+import contextlib
 import ctypes
 import json
 import logging
 import os
 import stat
 import tempfile
+import threading
+import time
 from pathlib import Path
 
-from ..application.ai_config import PROVIDERS
+try:
+    import fcntl
+except ImportError:  # Windows: the process lock below is all there is
+    fcntl = None
+
+from ..application.ai_config import KEY_PATTERN, PROVIDERS
 from ..application.ports import SecretStore, SecretStoreError
 from ..security.redaction import register_secret
 
@@ -44,7 +52,10 @@ log = logging.getLogger(__name__)
 
 FILE_NAME = 'api-keys'
 SCHEMA_VERSION = 1
-MAX_KEY_LENGTH = 512
+LOCK_FILE_NAME = '.lock'
+CORRUPT_SUFFIX = '.corrupt'
+LOCK_WAIT_SECONDS = 5.0  # the longest a writer waits for another one
+_PROCESS_LOCK = threading.RLock()  # serialises the read-modify-write cycles of this process
 CRYPTPROTECT_UI_FORBIDDEN = 0x1  # never show a prompt: this runs inside a settings dialog
 
 
@@ -112,16 +123,54 @@ class FileSecretStore(SecretStore):
     def set_api_key(self, provider, key):
         _check_provider(provider)
         key = _check_key(key)
-        keys = self._read()
-        keys[provider] = key
-        register_secret(key)
-        self._write(keys)
+        with self._exclusive():
+            keys = self._read_for_update()
+            keys[provider] = key
+            register_secret(key)
+            self._write(keys)
 
     def delete_api_key(self, provider):
         _check_provider(provider)
-        keys = self._read()
-        if keys.pop(provider, None) is not None:
-            self._write(keys)
+        with self._exclusive():
+            keys = self._read_for_update()
+            if keys.pop(provider, None) is not None:
+                self._write(keys)
+
+    # --- one writer at a time
+    @contextlib.contextmanager
+    def _exclusive(self):
+        """
+        The read-modify-write cycle of a change: one thread, and on POSIX one process, at a time. Without it two
+        writers read the same old file and the second rename silently drops the first one's key.
+        """
+        with _PROCESS_LOCK:
+            self._prepare_directory()
+            descriptor = None
+            try:
+                if fcntl is not None:
+                    descriptor = os.open(self.directory / LOCK_FILE_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+                    self._flock(descriptor)
+                yield
+            except OSError:
+                log.error('The API key file could not be locked.')
+                raise SecretStoreError('The API key could not be saved. Check the permissions of the OpenLP data '
+                                       'folder.') from None
+            finally:
+                if descriptor is not None:
+                    os.close(descriptor)  # closing releases the flock
+
+    @staticmethod
+    def _flock(descriptor):
+        deadline = time.monotonic() + LOCK_WAIT_SECONDS
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise SecretStoreError('The API keys are being changed by another OpenLP window. Try again in a '
+                                           'moment.') from None
+                time.sleep(0.01)
 
     # --- file handling
     def _read(self):
@@ -137,6 +186,39 @@ class FileSecretStore(SecretStore):
         if problem:
             log.warning('The API key file was ignored: %s.', problem)
             return {}
+        keys = self._parse()
+        if keys is None:
+            log.warning('The API key file could not be read and was ignored.')
+            return {}
+        return keys
+
+    def _read_for_update(self):
+        """
+        The keys to modify. Like ``_read``, but an existing file that cannot be parsed or decrypted is first moved to
+        ``api-keys.corrupt`` (one backup, the latest) instead of being overwritten without a trace.
+        """
+        try:
+            info = os.lstat(self.path)
+        except FileNotFoundError:
+            return {}
+        except OSError:
+            raise SecretStoreError('The stored API keys could not be inspected.') from None
+        if self._trust_problem(info):
+            return self._read()  # untrusted files are ignored, and the write replaces them with a private one
+        keys = self._parse()
+        if keys is None:
+            backup = self.path.with_name(FILE_NAME + CORRUPT_SUFFIX)
+            try:
+                os.replace(self.path, backup)
+            except OSError:
+                raise SecretStoreError('The stored API keys are unreadable and could not be backed up.') from None
+            log.warning('The API key file could not be read; it was kept as %s and a new one is started.',
+                        backup.name)
+            return {}
+        return keys
+
+    def _parse(self):
+        """The ``{provider: key}`` of a trusted file, or ``None`` when its content cannot be used."""
         try:
             raw = self.path.read_bytes()
             if self.cipher is not None:
@@ -147,8 +229,7 @@ class FileSecretStore(SecretStore):
                     isinstance(value, str) for value in keys.values()):
                 raise ValueError('unexpected structure')
         except (OSError, ValueError, KeyError, TypeError, SecretStoreError):
-            log.warning('The API key file could not be read and was ignored.')
-            return {}
+            return None
         return {name: value for name, value in keys.items() if name in PROVIDERS}
 
     def _trust_problem(self, info):
@@ -191,7 +272,13 @@ class FileSecretStore(SecretStore):
                     pass
 
     def _prepare_directory(self):
-        self.directory.mkdir(parents=True, exist_ok=True)
+        if self.directory.is_symlink():  # chmod would follow the link and change a directory that is not ours
+            raise SecretStoreError('The folder for the API keys is a symbolic link, which is not accepted.')
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            raise SecretStoreError('The API key could not be saved. Check the permissions of the OpenLP data '
+                                   'folder.') from None
         if self.platform == 'posix':
             os.chmod(self.directory, 0o700)
 
@@ -203,6 +290,6 @@ def _check_provider(provider):
 
 def _check_key(key):
     key = (key or '').strip() if isinstance(key, str) else ''
-    if not key or len(key) > MAX_KEY_LENGTH or any(char.isspace() or ord(char) < 0x20 for char in key):
-        raise ValueError('The API key is empty or contains spaces or line breaks.')
+    if not KEY_PATTERN.match(key):  # the same rule the adapters apply, so a saved key is always a usable one
+        raise ValueError('The API key is empty, too short or long, or contains spaces or unsupported characters.')
     return key

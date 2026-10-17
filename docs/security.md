@@ -61,6 +61,12 @@ that the key never appears in OpenLP's settings or their export, in logs, in the
   one, so a crash or a full disk leaves the previous content intact. When reading, the file is **refused** (a warning
   without the key is logged and the key reads as absent) if it is a symlink, not a regular file, owned by another user,
   or readable or writable by group or world. Writing replaces such a file with a private one.
+- **Concurrent changes.** Every change is a read-modify-write under a process lock and, on POSIX, an `flock` on
+  `<secrets>/.lock` (bounded wait of 5 s), so two writers cannot drop each other's key. A file that is trusted but
+  cannot be parsed or decrypted is moved to `api-keys.corrupt` (one backup) before a new file is started, never
+  overwritten without a trace. A symlinked secrets *directory* is refused: `chmod` would follow it.
+- **Key shape.** The store accepts exactly what the adapters accept (`KEY_PATTERN` in `application/ai_config.py`:
+  printable ASCII without spaces, 6-500 characters), so a saved key is always a usable one.
 - **Windows.** The file content is encrypted with DPAPI (`CryptProtectData`, bound to the signed-in Windows user, no UI
   prompt) via `ctypes`, so it is useless if copied to another account or machine. The DPAPI code path is unit-tested on
   every platform with a mocked crypt API.
@@ -107,11 +113,12 @@ uploaded-PNG option) before it is stored or rendered, and again on every load an
 |------|-----|
 | The key never appears in a URL | Gemini uses the `x-goog-api-key` header; OpenAI/compatible use `Authorization`, Anthropic `x-api-key` |
 | No key in errors or logs | Adapters build error messages from fixed text plus a shortened, redacted provider message; exception text from `requests` (which can carry URLs or headers) is never used; `register_secret` makes the exact key redactable |
+| No proxy, no `.netrc` | The session has `trust_env = False`: `HTTP(S)_PROXY` would send the bearer key in clear text to the proxy and `.netrc` could replace the `Authorization` header. A proxy, if ever needed, must be an explicit setting |
 | No redirects | `allow_redirects=False`: a custom auth header would otherwise travel to the redirect target |
-| Bounded | `AiConfig.bounded_timeout` (5-300 s), at most 2 retries on 429/5xx (1 s, 2 s backoff or `Retry-After`, capped at 10 s), responses refused beyond 2 MB while reading |
+| Bounded | `AiConfig.bounded_timeout` (5-300 s) per wait on the socket, **and a wall-clock budget of twice that timeout for the whole call** (every attempt, backoff and the streaming of the body; checked per chunk, so a server that trickles one byte a second is cut off). At most 2 retries on 429/5xx (1 s, 2 s backoff or `Retry-After`, capped at 10 s; a pause that would use up the budget fails at once), responses refused beyond 2 MB while reading |
 | One repair round | A rejected answer is sent back once with the violations; a second rejection is an error, never a loop |
 | Plain `http://` | Only to `localhost`/`127.0.0.1` (OpenAI-compatible), enforced by `validate_base_url` |
-| Off the GUI thread | `lib/background.py` runs the blocking call on a `QThreadPool` and delivers the result on the GUI thread; a closed dialog cancels the job (the HTTP call ends by its timeout) |
+| Off the GUI thread | `lib/background.py` runs the blocking call on a `QThreadPool` and delivers the result on the GUI thread; a closed dialog cancels the job: the request stops at its next checkpoint (between chunks and attempts, `application/cancellation.py`); a wait on the socket ends by its own timeout |
 
 An AI template is stored with the cover as `custom_template_html` in its JSON (additive key, schema 1). It is
 re-sanitised when the file is read (a stored template that no longer passes is dropped and the cover still loads,
@@ -121,6 +128,10 @@ same allowlisted root the renderer's request filter already enforces.
 
 ### Residual risks (accepted)
 
+- Logging blind spots. Redaction covers the `contrib.plugins.portadas` logger hierarchy. `http.client` debug output
+  (`http.client.HTTPConnection.debuglevel`) is printed to stdout, not logged, and a handler attached to a child logger
+  of `urllib3` or `requests` by other code sees records before this filter. Do not enable those in a build that holds a
+  real key.
 - The model can ignore the style hint or produce an ugly design that passes every check. The preview is the check.
 - A provider can bill for a request whose answer we then reject. The single repair round caps this at two calls per
   design; use provider-side spending limits.

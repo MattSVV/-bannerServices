@@ -265,7 +265,8 @@ class PortadasSettingsTab(SettingsTab):
                 self._key_saved[provider] = False
                 self._pending_clear.discard(provider)
         except ValueError:
-            warnings.append(translate(context, 'The API key was not saved: it is empty or contains spaces.'))
+            warnings.append(translate(context, 'The API key was not saved: it is empty, too short or long, or contains '
+                                              'spaces or unsupported characters.'))
         except SecretStoreError as error:
             warnings.append(redact(str(error)))
 

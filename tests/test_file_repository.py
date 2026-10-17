@@ -423,3 +423,37 @@ def test_the_json_is_the_commit_marker_of_a_save(repo, monkeypatch):
     repo.save(make_cover(), PNG)
 
     assert order == ['c1.png', 'c1.json']
+
+
+# --- T12b: one damaged entry never hides the others ------------------------------------------------------------------
+
+def test_a_cover_with_a_hostile_deeply_nested_template_does_not_break_the_list(repo):
+    repo.save(make_cover('ok', 1), PNG)
+    repo.save(make_cover('deep', 2), PNG)
+    path = repo.root / 'deep.json'
+    data = json.loads(path.read_text(encoding='utf-8'))
+    data['custom_template_html'] = '<div>' * 5000 + '{{title_main}}' + '</div>' * 5000
+    path.write_text(json.dumps(data), encoding='utf-8')
+
+    covers = repo.list()
+
+    assert [cover.id for cover in covers] == ['deep', 'ok']
+    assert covers[0].custom_template_html is None  # the template was dropped, the cover stays usable
+
+
+def test_an_unexpected_error_while_reading_one_entry_skips_only_that_entry(repo, monkeypatch, caplog):
+    repo.save(make_cover('ok', 1), PNG)
+    repo.save(make_cover('bad', 2), PNG)
+    real = file_repository.cover_from_json
+
+    def flaky(text):
+        cover = real(text)
+        if cover.id == 'bad':
+            raise RecursionError('boom')
+        return cover
+
+    monkeypatch.setattr(file_repository, 'cover_from_json', flaky)
+
+    with caplog.at_level(logging.WARNING):
+        assert [cover.id for cover in repo.list()] == ['ok']
+    assert 'bad' in caplog.text

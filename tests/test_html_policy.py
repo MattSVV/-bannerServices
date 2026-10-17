@@ -408,3 +408,25 @@ def test_sanitize_svg_neutralises_payloads(payload):
 ])
 def test_sanitize_svg_requires_exactly_one_text_free_svg_root(payload):
     assert not sanitize_svg(payload).accepted
+
+
+# --- T12b: pathological nesting never raises ---------------------------------------------------------------------
+
+DEEP = '<div>' * 5000 + OK + '</div>' * 5000
+
+
+def test_a_template_nested_thousands_of_levels_deep_is_rejected_not_raised():
+    result = sanitize_template(page(DEEP))
+
+    assert not result.accepted and 'too-deep' in {violation.code for violation in result.violations}
+
+
+def test_an_icon_nested_thousands_of_levels_deep_is_rejected_not_raised():
+    result = sanitize_svg('<svg>' + '<g>' * 5000 + '</g>' * 5000 + '</svg>')
+
+    assert not result.accepted
+
+
+def test_require_safe_template_reports_deep_nesting_as_a_rejection():
+    with pytest.raises(TemplateRejected):
+        require_safe_template(page(DEEP))

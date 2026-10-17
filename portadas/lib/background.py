@@ -29,14 +29,15 @@ Usage (the editor's AI mode and the settings page)::
 
 ``on_done(result)`` and ``on_error(message)`` run on the thread that called ``run_in_background`` (it must be the GUI
 thread). ``message`` is the text of a ``DesignError`` (presentable, key-free), or a generic sentence for any other
-exception; the key-shaped text is redacted either way. The HTTP call itself cannot be interrupted: it ends by its own
-timeout, and ``cancel`` only drops its result.
+exception; the key-shaped text is redacted either way. An AI request stops at its next checkpoint after ``cancel``
+(between chunks and attempts, see ``application/cancellation.py``); a wait on the socket ends by its own timeout.
 """
 import logging
 
 from openlp.core.common.i18n import translate
 from PyQt5 import QtCore
 
+from ..application import cancellation
 from ..application.ports import DesignError
 from ..security.redaction import redact
 
@@ -53,11 +54,13 @@ class BackgroundJob(QtCore.QObject):
         super().__init__()
         self._work, self._on_done, self._on_error = work, on_done, on_error
         self._cancelled = False
+        self._cancel_event = cancellation.CancelEvent()  # seen by the work through ``application/cancellation.py``
         self._finished.connect(self._deliver)  # queued: emitted by the worker, received on the GUI thread
 
     def cancel(self):
-        """Drop the outcome: neither callback will run."""
+        """Drop the outcome: neither callback will run, and the work is asked to stop at its next checkpoint."""
         self._cancelled = True
+        self._cancel_event.set()
 
     @property
     def cancelled(self):
@@ -66,7 +69,9 @@ class BackgroundJob(QtCore.QObject):
     def run_work(self):
         """Executed on the worker thread."""
         try:
-            self._finished.emit(self._work(), '')
+            with cancellation.bound(self._cancel_event):
+                result = self._work()
+            self._finished.emit(result, '')
         except DesignError as error:
             self._finished.emit(None, redact(str(error)) or type(error).__name__)
         except Exception as error:  # noqa: BLE001 - nothing may escape a worker thread
