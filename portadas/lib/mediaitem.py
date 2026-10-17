@@ -33,6 +33,7 @@ from openlp.core.common.i18n import translate
 from openlp.core.common.settings import Settings
 from openlp.core.lib import ServiceItemContext, build_icon, check_item_selected, create_thumb, validate_thumb
 from openlp.core.lib.mediamanageritem import MediaManagerItem
+from openlp.core.lib.serviceitem import ItemCapabilities
 from openlp.core.lib.ui import create_widget_action
 from openlp.core.ui.icons import UiIcons
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -311,5 +312,32 @@ class PortadasMediaItem(MediaManagerItem):
     # --- service integration ----------------------------------------------------------------------------------------
     def generate_slide_data(self, service_item, *, item=None, remote=False, context=ServiceItemContext.Service,
                             **kwargs):
-        """Placeholder until the service integration (Preview, Live, Add to Service) is wired."""
-        return False
+        """
+        Build an image service item from the selected cover: the stored PNG is the slide, so the service file bundles
+        the image and the cover still opens after it is deleted from the library.
+
+        :param service_item: The service item to fill.
+        :param item: The list item (or model index) of the cover; defaults to the current one.
+        :param remote: Triggered from a remote; no dialog is shown then.
+        :param context: Why the item is being built (unused).
+        :returns: True when the service item is ready, False when there is nothing to add.
+        """
+        cover_id = self._get_id_of_item_to_generate(item, None)
+        if not cover_id:
+            return False
+        try:
+            cover = self.services.repository.get(cover_id)
+            png_path = self.services.repository.png_path(cover_id)
+        except RepositoryError as error:
+            if not remote:
+                self.show_error(translate('PortadasPlugin.MediaItem', 'Cover not found'), str(error))
+            return False
+        if not service_item.slides:  # appending to an existing item keeps its title
+            service_item.title = display_title(cover)
+        for capability in (ItemCapabilities.CanMaintain, ItemCapabilities.CanPreview, ItemCapabilities.CanLoop,
+                           ItemCapabilities.CanAppend, ItemCapabilities.CanEditTitle,
+                           ItemCapabilities.HasThumbnails, ItemCapabilities.ProvidesOwnTheme):
+            service_item.add_capability(capability)
+        service_item.theme = -1  # a cover is a finished image: no theme background behind it
+        service_item.add_from_image(png_path, file_name_for(cover), self._ensure_thumbnail(cover_id, png_path))
+        return True

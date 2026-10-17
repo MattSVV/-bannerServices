@@ -23,6 +23,11 @@ printf '[core]\nhas%%20run%%20wizard=true\napplication%%20version=3.1.8\n\n[sett
 
 OPENLP_DATA_DIR="$XDG_DATA_HOME/openlp" "$repo/scripts/dev-install.sh"
 
+# Create sample covers through the plugin's own use case and the real renderer, so the library tab has something to
+# list. The second one has an uploaded PNG icon and the script checks it shows up in the rendered image.
+echo "--- seeding covers ---"
+"$openlp_src/.venv/bin/python" "$repo/scripts/seed_cover.py" "$XDG_DATA_HOME/openlp"
+
 # A fresh profile creates every plugin database on first start, which can take a minute on a slow disk.
 # Run OpenLP in the background and stop it as soon as the plugin is initialised (or the timeout expires).
 log="$XDG_CACHE_HOME/openlp/openlp.log"
@@ -50,4 +55,8 @@ if grep -nEi 'Failed to import|(ERROR|CRITICAL).*portadas|File ".*portadas' "$lo
 fi
 grep -qE 'Loaded plugin .*PortadasPlugin' "$log"
 grep -qE 'initialising plugins portadas in a True state' "$log"
-echo "OK: Portadas plugin loaded and initialised"
+# The library tab must have listed the seeded covers and built a thumbnail for each.
+grep -qE 'Portadas library loaded: 2 cover\(s\)' "$log" || { echo "the library tab did not list the 2 seeded covers" >&2; exit 1; }
+thumbnails="$(find "$XDG_DATA_HOME/openlp/portadas/thumbnails" -name '*.png' 2>/dev/null | wc -l)"
+[ "$thumbnails" -eq 2 ] || { echo "expected 2 thumbnails, found $thumbnails" >&2; exit 1; }
+echo "OK: Portadas plugin loaded and initialised; library listed 2 covers with $thumbnails thumbnails"

@@ -46,6 +46,12 @@ Why the profile is pre-seeded (`OpenLP.conf` in the throwaway `XDG_CONFIG_HOME`)
 | `core/application version=3.1.8` and `settings/version=3` | the "Settings are about to be upgraded" message box |
 | `portadas/status=1` | the plugin starting `Inactive` (no library tab is created) |
 
+Before OpenLP starts, `scripts/seed_cover.py` creates two covers in the throwaway data dir through the plugin's own use
+case and the real renderer; the second uses an uploaded PNG icon, and the script checks the PNG shows up in the render
+(sampled red pixels). The harness then requires the log line `Portadas library loaded: 2 cover(s)` and one thumbnail
+per cover. Adding to the service needs a visible main window, so it is covered by unit tests
+(`tests/test_service_integration.py`) and by the manual checklist below, not by the headless run.
+
 Other notes:
 
 - `-e` (`--no-error-form`) stops the exception dialog from blocking on errors.
@@ -130,4 +136,13 @@ Run OpenLP with the plugin installed (`scripts/dev-install.sh`) and tick each li
 - [ ] **Filter.** Type part of a title in the filter box (accents and case ignored): the list narrows.
 - [ ] **Export.** Right-click > *Export PNG...*, choose a file. Open it: 1920x1080. Export again to the same file:
   the dialog asks before overwriting.
+- [ ] **Preview.** Select a cover and click *Preview* (or double-click): the cover fills the preview screen as a
+  single image slide.
+- [ ] **Live.** Click *Go Live*: the cover appears on the output screen. Next/previous slide keys do nothing odd.
+- [ ] **Add to service.** Click *Add to Service* (or drag the cover onto the service order). A service item with the
+  cover's title appears, with the cover as its slide. Select two covers and add them: two service items.
+- [ ] **Append.** Drop a cover onto an existing Covers service item and choose *Add to selected item*: the item keeps
+  its title and gains a second slide.
+- [ ] **Service file.** Save the service (`.osz`), delete the cover from the library, then close and re-open the
+  service: the item is still there and its slide shows the cover.
 - [ ] **Delete.** Select a cover, *Delete*, answer *No*: nothing happens. Answer *Yes*: it disappears.

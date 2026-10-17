@@ -44,6 +44,8 @@ try:
 except ImportError:  # pure-Python tests still run without Qt
     pass
 
+pytest_plugins = ['tests.library_support']
+
 PLUGIN_NAME = 'portadas'
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -73,8 +75,10 @@ def community_module_name():
 @pytest.fixture
 def openlp_env(qapp, tmp_path):
     """The bits of OpenLP's global state widgets need: a Registry holding a Settings object backed by a temp file."""
+    from openlp.core.common.actions import ActionList
     from openlp.core.common.registry import Registry
     from openlp.core.common.settings import Settings
+    ActionList.instance, ActionList.shortcut_map = None, {}  # actions of earlier tests may be deleted by now
     Registry.create()
     Settings.set_filename(str(tmp_path / 'openlp-test.ini'))
     settings = Settings()
@@ -84,4 +88,5 @@ def openlp_env(qapp, tmp_path):
     Registry().register('settings_thread', settings)
     Registry().register('application', qapp)
     yield settings
+    ActionList.instance, ActionList.shortcut_map = None, {}
     Registry._instances = {}
