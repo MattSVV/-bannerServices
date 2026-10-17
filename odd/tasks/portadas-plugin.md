@@ -75,9 +75,9 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T01
 - [x] T02
 - [x] T03
-- [ ] T04
-- [ ] T05
-- [ ] T06
+- [x] T04
+- [x] T05
+- [x] T06
 - [ ] T07
 - [ ] T08
 - [ ] T09
@@ -111,8 +111,18 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 | Task | Status | Commit | Evidence |
 |------|--------|--------|----------|
 | T01 | done | `da600a0` | Structural readback of README, LICENSE (GPL-3.0 copied from OpenLP), `.gitignore`. Route: inline (1 mechanical doc unit). |
-| T02 | done | `aee17fc` | `scripts/check.sh`: ruff OK, 3 passed, coverage gate configurable (`COVERAGE_MIN`). Route: delegated writer (write trigger: 5 files). Assess tier: high (shell scripts, exec mode); independent verifier pending. |
+| T02 | done | `aee17fc` | `scripts/check.sh`: ruff OK, 3 passed, coverage gate configurable (`COVERAGE_MIN`). Route: delegated writer (write trigger: 5 files). Assess tier: high (shell scripts, exec mode). Independent verifier: 6/6 PASS, no defects. |
 | T03 | done | `33fc722` | RED `ModuleNotFoundError contrib.plugins.portadas.portadasplugin`, then RED `KeyError 'portadas/status'`, then GREEN 3 passed. Runtime: `scripts/run-headless.sh`, exit 0, log `Loaded plugin <class 'contrib.plugins.portadas.portadasplugin.PortadasPlugin'>`, `Initialisation Complete for portadas`. Orchestrator spot check: `scripts/check.sh`, all checks passed. |
+| T04 | done | `08bc47c` | RED `ModuleNotFoundError ...domain.cover`, GREEN 102 tests. Route: delegated writer (shared T04-T06). |
+| T05 | done | `66fafe4` | RED `ModuleNotFoundError ...application.icon_catalog`, GREEN 173 tests. Visual check: `noche-dorada` matches the reference design. |
+| T06 | done | `cce22a7` | RED `ModuleNotFoundError ...security.html_policy`, GREEN 350 total. Orchestrator spot check: `scripts/check.sh`, 350 passed, coverage 96.16% (gate 90%). Assess tier: high (3143 lines, hot_path); adversarial verifier running. |
+
+## Accepted changes
+
+- `Cover.readings_label` (default "LECTURAS") plus the `{{readings_label}}` placeholder. Reason: the text guarantee forbids hard-coded visible text, so the static heading must be a placeholder.
+- The sanitizer uses the stdlib `html.parser` with an allowlist rebuild instead of lxml or bs4. This is fewer dependencies, which is fine.
+- OFL fonts are bundled (Playfair Display, Outfit, about 690 KB) in `portadas/assets/fonts/`.
+- Cross-chapter ranges (`Juan 3:16-4:2`) are rejected for now. This is a possible follow-up.
 
 ## Findings carried forward
 
@@ -123,4 +133,4 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 
 ## Next step
 
-T04: domain model and scripture reference parser (TDD). In parallel, an independent read-only verifier for T02/T03 scripts.
+T07 (renderer) + T08 (repository) by one writer. In parallel, an adversarial read-only verifier for the T06 sanitizer.
