@@ -57,7 +57,6 @@ class AiConfig:
     model: str
     base_url: str
     timeout: int
-    background_images: bool
 
     @property
     def effective_model(self):

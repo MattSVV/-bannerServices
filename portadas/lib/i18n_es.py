@@ -148,8 +148,6 @@ UI = {
         'Anthropic': 'Anthropic',
         'Clear': 'Borrar',
         'Covers settings': 'Configuración de Portadas',
-        'Generate AI background images (providers that support it)':
-            'Generar imágenes de fondo con IA (proveedores que lo admiten)',
         'Google Gemini': 'Google Gemini',
         'Model:': 'Modelo:',
         'No API key saved.': 'No hay ninguna clave de API guardada.',

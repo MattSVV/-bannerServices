@@ -44,7 +44,6 @@ PROVIDER_KEY = 'portadas/ai provider'
 MODEL_KEY = 'portadas/ai model'
 BASE_URL_KEY = 'portadas/ai base url'
 TIMEOUT_KEY = 'portadas/ai timeout'
-BACKGROUND_KEY = 'portadas/ai background images'
 
 # OpenLP reads defaults while a plugin is instantiated, so they must exist at import time.
 Settings.extend_default_settings({
@@ -52,7 +51,6 @@ Settings.extend_default_settings({
     MODEL_KEY: '',
     BASE_URL_KEY: '',
     TIMEOUT_KEY: DEFAULT_TIMEOUT,
-    BACKGROUND_KEY: False,
 })
 
 
@@ -67,8 +65,7 @@ def load_ai_config(settings=None):
     return AiConfig(provider=provider if provider in PROVIDERS else DEFAULT_PROVIDER,
                     model=str(settings.value(MODEL_KEY) or ''),
                     base_url=str(settings.value(BASE_URL_KEY) or ''),
-                    timeout=max(MIN_TIMEOUT, min(MAX_TIMEOUT, timeout)),
-                    background_images=bool(settings.value(BACKGROUND_KEY)))
+                    timeout=max(MIN_TIMEOUT, min(MAX_TIMEOUT, timeout)))
 
 
 def save_ai_config(settings, config):
@@ -77,7 +74,6 @@ def save_ai_config(settings, config):
     settings.setValue(MODEL_KEY, config.model.strip())
     settings.setValue(BASE_URL_KEY, config.base_url)
     settings.setValue(TIMEOUT_KEY, config.bounded_timeout)
-    settings.setValue(BACKGROUND_KEY, bool(config.background_images))
 
 
 def default_secret_store():

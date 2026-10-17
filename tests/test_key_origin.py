@@ -41,7 +41,7 @@ def clean_secrets():
 
 
 def config(url=HOME, provider='openai_compatible'):
-    return AiConfig(provider, '', url, 60, False)
+    return AiConfig(provider, '', url, 60)
 
 
 # --- the origin ------------------------------------------------------------------------------------------------------

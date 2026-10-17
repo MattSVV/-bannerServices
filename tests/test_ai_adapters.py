@@ -58,7 +58,7 @@ def _forget_keys():
 
 def config(provider, model='', timeout=60, base_url=''):
     default_url = COMPAT_URL if provider == 'openai_compatible' else ''
-    return AiConfig(provider, model, base_url or default_url, timeout, False)
+    return AiConfig(provider, model, base_url or default_url, timeout)
 
 
 def make(provider, *script, model='', timeout=60, key=KEY):
@@ -448,7 +448,7 @@ def test_the_default_model_is_used_when_the_field_is_empty():
 
 def test_an_unknown_provider_is_refused():
     with pytest.raises(DesignError):
-        create_designer(AiConfig('evilcorp', '', '', 60, False), KEY)
+        create_designer(AiConfig('evilcorp', '', '', 60), KEY)
 
 
 # --- T12b: total deadline, cancellation, no proxy/netrc from the environment ------------------------------------------

@@ -119,8 +119,6 @@ class PortadasSettingsTab(SettingsTab):
         self.timeout_spin.setRange(MIN_TIMEOUT, MAX_TIMEOUT)
         self.timeout_label = QtWidgets.QLabel(self.group_box)
         form.addRow(self.timeout_label, self.timeout_spin)
-        self.background_check = QtWidgets.QCheckBox(self.group_box)
-        form.addRow(self.background_check)
         # API key: never displayed, only replaced or cleared.
         self.api_key_edit = QtWidgets.QLineEdit(self.group_box)
         self.api_key_edit.setObjectName('api_key_edit')
@@ -158,7 +156,6 @@ class PortadasSettingsTab(SettingsTab):
         self.base_url_edit.setPlaceholderText(translate(context, 'https://host/v1 or http://localhost:11434/v1'))
         self.timeout_label.setText(translate(context, 'Request timeout:'))
         self.timeout_spin.setSuffix(translate(context, ' s'))
-        self.background_check.setText(translate(context, 'Generate AI background images (providers that support it)'))
         self.api_key_label.setText(translate(context, 'API key:'))
         self.clear_key_button.setText(translate(context, 'Clear'))
         self.test_button.setText(translate(context, 'Test connection'))
@@ -243,8 +240,7 @@ class PortadasSettingsTab(SettingsTab):
 
     def current_config(self):
         return AiConfig(provider=self.selected_provider(), model=self.model_edit.text().strip(),
-                        base_url=self.base_url_edit.text().strip(), timeout=self.timeout_spin.value(),
-                        background_images=self.background_check.isChecked())
+                        base_url=self.base_url_edit.text().strip(), timeout=self.timeout_spin.value())
 
     # --- SettingsTab API
     def load(self):
@@ -257,7 +253,6 @@ class PortadasSettingsTab(SettingsTab):
         self.base_url_edit.setText(config.base_url)
         self.base_url_edit.blockSignals(False)
         self.timeout_spin.setValue(config.timeout)
-        self.background_check.setChecked(config.background_images)
         self.api_key_edit.clear()
         self._cancel_test()
         self.test_result_label.clear()
@@ -284,8 +279,7 @@ class PortadasSettingsTab(SettingsTab):
                     warnings.append(translate('PortadasPlugin.SettingsTab',
                                               'The server address was not saved: {error}').format(
                                                   error=localize(str(error))))
-        save_ai_config(self.settings, AiConfig(config.provider, config.model, base_url, config.timeout,
-                                               config.background_images))
+        save_ai_config(self.settings, AiConfig(config.provider, config.model, base_url, config.timeout))
         self._save_key(config.provider, warnings)
         self.api_key_edit.clear()  # the typed key must not linger in the widget
         self.refresh_key_state()

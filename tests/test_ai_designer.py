@@ -37,7 +37,7 @@ class Store:
 
 
 def config(**overrides):
-    values = dict(provider='openai', model='', base_url='', timeout=60, background_images=False)
+    values = dict(provider='openai', model='', base_url='', timeout=60)
     values.update(overrides)
     return AiConfig(**values)
 

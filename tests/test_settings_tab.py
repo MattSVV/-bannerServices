@@ -95,7 +95,7 @@ def test_defaults_are_loaded(make_tab):
     assert tab.model_edit.text() == ''
     assert tab.model_edit.placeholderText() == DEFAULT_MODELS['openai']
     assert tab.timeout_spin.value() == DEFAULT_TIMEOUT
-    assert not tab.background_check.isChecked()
+    assert not hasattr(tab, 'background_check')
     assert not tab.base_url_edit.isEnabled()
     assert tab.api_key_edit.echoMode() == tab.api_key_edit.Password
     assert tab.api_key_edit.text() == ''
@@ -127,13 +127,11 @@ def test_save_writes_only_non_secret_values_to_settings(make_tab, openlp_env):
     tab.model_edit.setText('qwen2.5:7b')
     tab.base_url_edit.setText('http://localhost:11434/v1')
     tab.timeout_spin.setValue(90)
-    tab.background_check.setChecked(True)
     tab.api_key_edit.setText(f'  {NEW}  ')
 
     tab.save()
 
-    assert load_ai_config(openlp_env) == AiConfig('openai_compatible', 'qwen2.5:7b', 'http://localhost:11434/v1', 90,
-                                                  True)
+    assert load_ai_config(openlp_env) == AiConfig('openai_compatible', 'qwen2.5:7b', 'http://localhost:11434/v1', 90)
     assert store.keys == {'openai_compatible': NEW}
     assert NEW not in all_settings_text(openlp_env)
     assert 'sk-' not in all_settings_text(openlp_env)
@@ -236,13 +234,12 @@ def test_a_valid_base_url_clears_the_error(make_tab):
 
 
 def test_loading_again_shows_the_saved_values(make_tab, openlp_env):
-    save_ai_config(openlp_env, AiConfig('gemini', 'gemini-x', '', 120, True))
+    save_ai_config(openlp_env, AiConfig('gemini', 'gemini-x', '', 120))
     tab = make_tab()
 
     assert tab.provider_combo.currentData() == 'gemini'
     assert tab.model_edit.text() == 'gemini-x'
     assert tab.timeout_spin.value() == 120
-    assert tab.background_check.isChecked()
 
 
 def test_a_corrupt_stored_provider_falls_back_to_the_default(make_tab, openlp_env):
@@ -345,3 +342,12 @@ def test_the_widgets_use_translated_titles(make_tab):
     assert tab.tab_title == 'portadas'
     assert tab.group_box.title()
     assert tab.timeout_spin.minimum() < tab.timeout_spin.maximum()
+
+
+def test_a_legacy_background_key_in_old_settings_is_ignored(make_tab, openlp_env):
+    openlp_env.setValue('portadas/ai background images', True)
+    tab = make_tab()
+
+    assert load_ai_config(openlp_env) == AiConfig('openai', '', '', DEFAULT_TIMEOUT)
+    assert tab.timeout_spin.value() == DEFAULT_TIMEOUT
+    tab.save()  # saving over an old file must not break

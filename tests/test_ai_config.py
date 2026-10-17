@@ -37,8 +37,8 @@ def test_every_provider_has_a_default_model():
 
 
 def test_effective_model_falls_back_to_the_provider_default():
-    assert AiConfig('anthropic', '', '', 60, False).effective_model == DEFAULT_MODELS['anthropic']
-    assert AiConfig('anthropic', '  my-model ', '', 60, False).effective_model == 'my-model'
+    assert AiConfig('anthropic', '', '', 60).effective_model == DEFAULT_MODELS['anthropic']
+    assert AiConfig('anthropic', '  my-model ', '', 60).effective_model == 'my-model'
 
 
 @pytest.mark.parametrize('url', [
@@ -59,5 +59,5 @@ def test_invalid_base_urls_are_rejected(url):
 
 def test_timeout_bounds_are_sane():
     assert MIN_TIMEOUT <= DEFAULT_TIMEOUT <= MAX_TIMEOUT
-    assert AiConfig('openai', '', '', 9999, False).bounded_timeout == MAX_TIMEOUT
-    assert AiConfig('openai', '', '', 0, False).bounded_timeout == MIN_TIMEOUT
+    assert AiConfig('openai', '', '', 9999).bounded_timeout == MAX_TIMEOUT
+    assert AiConfig('openai', '', '', 0).bounded_timeout == MIN_TIMEOUT
