@@ -21,7 +21,13 @@
 import os
 import stat
 
-from PyQt5 import QtCore, QtGui, QtSvg
+from PyQt5 import QtCore, QtGui
+
+try:
+    # The Windows build of OpenLP does not bundle QtSvg; without it the picker shows no thumbnails.
+    from PyQt5 import QtSvg
+except ImportError:
+    QtSvg = None
 
 from ..application.icon_upload import MAX_PNG_DIMENSION, png_decode_bytes, png_size
 from ..domain.cover import CoverError
@@ -97,6 +103,11 @@ def _encode_png(image):
     return bytes(buffer.data())
 
 
+def svg_preview_available():
+    """True when QtSvg is installed and icon thumbnails can be drawn."""
+    return QtSvg is not None
+
+
 def svg_pixmap(svg_text, size=PICKER_SIZE, color='#555555'):
     """
     Draw inline SVG markup on a transparent pixmap; ``currentColor`` becomes ``color``. Blank when unreadable.
@@ -106,6 +117,8 @@ def svg_pixmap(svg_text, size=PICKER_SIZE, color='#555555'):
     """
     pixmap = QtGui.QPixmap(size, size)
     pixmap.fill(QtCore.Qt.transparent)
+    if QtSvg is None:
+        return pixmap
     safe = sanitize_svg(svg_text, allow_png_image=True) if isinstance(svg_text, str) else None
     if safe is None or not safe.accepted:
         return pixmap

@@ -49,7 +49,7 @@ from .ai_settings import destination_key, destination_label, load_ai_config
 from .background import run_in_background
 from .dialogs import message_box, plain_tooltip
 from .i18n import localize
-from .iconimage import prepare_png_icon, read_regular_file, svg_pixmap
+from .iconimage import prepare_png_icon, read_regular_file, svg_pixmap, svg_preview_available
 
 log = logging.getLogger(__name__)
 
@@ -274,6 +274,8 @@ class CoverEditForm(QtWidgets.QDialog):
             item = QtWidgets.QListWidgetItem()
             item.setData(QtCore.Qt.UserRole, IconRef(IconKind.BUILTIN, icon_id))
             item.setToolTip(localize(icon_id.replace('-', ' ')))
+            if not svg_preview_available():
+                item.setText(localize(icon_id.replace('-', ' ')))
             try:
                 item.setIcon(QtGui.QIcon(svg_pixmap(self.services.icons.svg(icon_id))))
             except DomainError:

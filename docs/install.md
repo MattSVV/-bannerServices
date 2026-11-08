@@ -115,6 +115,8 @@ Search the log for `portadas`. A line `Failed to import contrib.plugins.portadas
 
 **Covers do not render / blank preview.** Portadas draws covers with QtWebEngine. OpenLP 3.1.8 declares `PyQtWebEngine` as a dependency (`setup.py:115`), but some Linux distribution packages split it out. If OpenLP starts but covers fail, install your distribution's PyQt5 WebEngine package (the name varies, for example `python3-pyqt5.qtwebengine` on Debian-family systems **(unverified)**) and restart.
 
+**Icons show as names, not pictures.** The Windows installer of OpenLP does not bundle the `QtSvg` module (seen on 3.1.7: `ImportError: cannot import name 'QtSvg' from 'PyQt5'`). Portadas then loads without icon thumbnails and lists the icons by name in the editor. Covers themselves are drawn with QtWebEngine and show the icons normally.
+
 **No screen (servers, containers, CI).** Run with `QT_QPA_PLATFORM=offscreen`. The repository's `scripts/run-headless.sh` and `scripts/e2e_flow.py` do this to render covers without a display. On a normal desktop you do not need it.
 
 **AI design fails.** The status line gives the reason without revealing your key. Check the key and model in *Settings > Configure OpenLP > Covers*. See [security.md](security.md) for what is sent to the provider.
