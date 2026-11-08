@@ -297,8 +297,13 @@ def test_plugin_strings_are_in_spanish(qapp, installed):
     assert QtWidgets.QApplication.translate('PortadasPlugin', 'Covers', 'name plural') == 'Portadas'
 
 
-@pytest.mark.parametrize('setting,spanish', [('es', True), ('[es]', True), ('en', False), ('de', False)])
-def test_the_plugin_follows_the_openlp_language_setting(qapp, openlp_env, setting, spanish):
+@pytest.mark.parametrize('setting,system,spanish', [
+    ('es', 'en_US', True), ('en', 'es_ES', False), ('de', 'es_ES', False),
+    # A bracketed value is OpenLP's "Automatic" choice: the system language decides, not the code inside.
+    ('[es]', 'es_ES', True), ('[es]', 'en_US', False), ('[en]', 'es_ES', True),
+])
+def test_the_plugin_follows_the_openlp_language_setting(qapp, openlp_env, monkeypatch, setting, system, spanish):
+    monkeypatch.setattr(QtCore.QLocale, 'system', staticmethod(lambda: QtCore.QLocale(system)))
     openlp_env.setValue('core/language', setting)
     try:
         translator = i18n.install_for_openlp()
