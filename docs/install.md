@@ -12,9 +12,9 @@ Release zips are named `openlp-portadas-<version>.zip` and come with a `.sha256`
 
 | System | Command |
 |--------|---------|
-| Linux | `sha256sum -c openlp-portadas-0.1.0.zip.sha256` |
-| macOS | `shasum -a 256 openlp-portadas-0.1.0.zip` and compare with the `.sha256` file |
-| Windows (PowerShell) | `Get-FileHash openlp-portadas-0.1.0.zip -Algorithm SHA256` and compare |
+| Linux | `sha256sum -c openlp-portadas-0.1.1.zip.sha256` |
+| macOS | `shasum -a 256 openlp-portadas-0.1.1.zip` and compare with the `.sha256` file |
+| Windows (PowerShell) | `Get-FileHash openlp-portadas-0.1.1.zip -Algorithm SHA256` and compare |
 
 To build the zip yourself from a checkout, run `python3 scripts/package.py` (output goes to `dist/`). The zip holds only the `portadas/` folder (code, templates, icons, fonts, licence), so the same source always gives the same bytes.
 
@@ -47,7 +47,7 @@ Two cases to know about:
 1. Close OpenLP. Plugins are scanned only while OpenLP starts (`pluginmanager.py:52-61`).
 2. Create `<DataDir>/contrib/plugins/` if it does not exist.
 3. Unzip the release **into** that folder, so that a `portadas` folder appears there.
-   - Linux/macOS: `mkdir -p "<DataDir>/contrib/plugins" && unzip openlp-portadas-0.1.0.zip -d "<DataDir>/contrib/plugins"`
+   - Linux/macOS: `mkdir -p "<DataDir>/contrib/plugins" && unzip openlp-portadas-0.1.1.zip -d "<DataDir>/contrib/plugins"`
    - Windows: right-click the zip, *Extract All...*, and choose the `contrib\plugins` folder. Check that you did not end up with `plugins\portadas\portadas` (one level too deep).
 4. Start OpenLP.
 

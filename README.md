@@ -111,12 +111,22 @@ Feature-complete. The overnight factory run built the library tab, the editor wi
 - **AI scope (owner decision, 2026-10-17):** the AI designs HTML/CSS templates only. AI-generated background images (T14) were dropped.
 - **Manual checks still pending** (nothing here has been exercised by a human or on another platform):
   - the GUI checklist in [`docs/testing.md`](docs/testing.md) (adding a cover to the real service and showing it live);
-  - Windows and macOS runs;
+  - Windows and macOS runs (a first install on a Windows church PC found the QtSvg issue fixed in 0.1.1; the fixed build has not been installed there yet);
   - the CI workflow, which has never run because the repo has no remote yet;
   - a review of the Spanish translation by a native speaker;
   - a live test against a real AI provider (default model ids are unverified).
 
 How the run was executed, including rework and what the verifiers found, is in [`docs/factory-log.md`](docs/factory-log.md). Task list and evidence: [`odd/tasks/portadas-plugin.md`](odd/tasks/portadas-plugin.md).
+
+## Changelog
+
+### 0.1.1 (2026-11-08)
+
+- **Fix:** the plugin failed to load on the Windows build of OpenLP (`ImportError: cannot import name 'QtSvg' from 'PyQt5'`), because that installer does not bundle the QtSvg module. QtSvg is now optional: without it the icon picker lists icons by name instead of showing thumbnails. Covers still show their icons, since they are drawn with QtWebEngine.
+
+### 0.1.0
+
+- First release: library tab, cover editor with live preview, three built-in templates, PNG export, service integration, AI-designed templates, Spanish UI.
 
 ## License
 
