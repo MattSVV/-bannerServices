@@ -103,6 +103,8 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T15d (reopened by the T15 verification, `odd/findings/t15d-findings.md`: LOW and INFO findings 1-4 and 6)
 - [x] T19
 - [x] T15e (owner decision reverting T15d item 5: a mismatched stored key blocks with a message)
+- [x] T20 (church Windows PC: plugin failed to import, QtSvg not bundled; QtSvg made optional)
+- [ ] T20b (install the rebuilt zip on the church PC and confirm it loads)
 
 ## Acceptance criteria
 
@@ -154,6 +156,7 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 | T15e | done | `0a8faf8` | Reason: owner decision (2026-10-17) reverting T15d item 5, because silently dropping the key hides the problem from the user. Route: delegated writer (write trigger: 5 files). TDD ON, runner `../openlp/.venv/bin/python -m pytest`. RED: 8 of 26 `tests/test_key_origin.py` failed on the old code (`DID NOT RAISE DesignError` for both mismatch cases, the local keyless address with a mismatched key, the imported-settings case; Test connection showed "The saved key is not tied to a server. Enter the key again for evil.example.net." without the "before" wording nor the Settings path). GREEN 26. Fix: `key_block_message(status, host)` in `lib/ai_settings.py` (two plain-text messages, host only); `make_designer` raises `DesignError` when a stored OpenAI-compatible key is `changed` or `unbound`; Test connection shows the same text; no stored key still means a keyless request; saving the key again records the new origin and unblocks (tested). Two Spanish entries added (usted). Docs: `docs/security.md`, README "Configuring AI", `docs/testing.md`. Gate: `scripts/check.sh` 1449 passed, 97.45%, all checks passed. Note: with the real `Settings()` and a single isolated run, a test reading the global config did not see values just set, so the unblock test passes an explicit `AiConfig`. ~116+/34-. |
 | T19 | done | see git log | Factory log completed for T01..T15d with a summary section ("What the overnight run measured"); README "Status" rewritten. Route: inline (docs only). Gate: `scripts/check.sh` all checks passed. |
 | T14 | dropped | | Dropped by owner decision on 2026-10-17: only HTML/CSS templates designed by the AI, so image generation is out of scope. The unused *Generate AI background images* setting was removed; old settings files that still carry the key are ignored. Bundled `../../assets/backgrounds/` assets stay valid in the sanitizer. |
+| T20 | done | `28dec4a` | Found on the church PC (Windows, OpenLP 3.1.7, 2026-11-08): `ImportError: cannot import name 'QtSvg' from 'PyQt5' (C:\Program Files\OpenLP\_internal\PyQt5\__init__.pyc)` from `lib/iconimage.py:24`, so the whole plugin failed to load. The OpenLP Windows bundle ships only the Qt modules OpenLP uses. Fix: QtSvg imported optionally, `svg_preview_available()`, blank thumbnail without it, and the editor labels icons by name. Route: inline (owner asked on site). Tests: `tests/test_qtsvg_optional.py` (4, reloads the module with QtSvg blocked). Gate: `scripts/check.sh` 1453 passed, 97.45%, all checks passed. Not yet confirmed on Windows. Rebuilt zip sha256 `9ee6090822dd2e8ae81ba54093248ed18d41789db662f4c2cdb3e44b2c3325c3`. |
 
 ## Accepted changes
 
@@ -175,6 +178,8 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - During T03 the writer's first unisolated run touched the user's real OpenLP profile. It created a backup conf and data dirs, and installed the dev symlink `~/.local/share/openlp/contrib/plugins/portadas`. This is harmless, and the user should know.
 
 ## Next step
+
+**Pending on site (T20b):** on the church PC, close OpenLP, delete `%APPDATA%\openlp\data\contrib\plugins\portadas`, unzip the rebuilt `dist/openlp-portadas-0.1.0.zip` into `contrib\plugins` (check that `portadas\portadasplugin.py` is one level down), then Settings > Manage Plugins > Portadas > Active. If it fails, read the log traceback (`%APPDATA%\openlp\openlp.log`). Any other PyQt5 module beyond what OpenLP itself uses may also be missing on Windows.
 
 The feature is complete: T14 was dropped by owner decision (2026-10-17), so the AI designs HTML/CSS templates only. Remaining work needs the owner:
 
