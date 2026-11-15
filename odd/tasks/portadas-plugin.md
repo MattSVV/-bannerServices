@@ -104,7 +104,7 @@ Order: T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T
 - [x] T19
 - [x] T15e (owner decision reverting T15d item 5: a mismatched stored key blocks with a message)
 - [x] T20 (church Windows PC: plugin failed to import, QtSvg not bundled; QtSvg made optional)
-- [ ] T20b (install the rebuilt zip on the church PC and confirm it loads)
+- [x] T20b (v0.1.1 zip installed on the church PC; owner confirmed it loads, 2026-11-15)
 
 ## Acceptance criteria
 
