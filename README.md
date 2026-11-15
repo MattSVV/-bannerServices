@@ -113,7 +113,7 @@ Feature-complete. The overnight factory run built the library tab, the editor wi
 - **AI scope (owner decision, 2026-10-17):** the AI designs HTML/CSS templates only. AI-generated background images (T14) were dropped.
 - **Manual checks still pending** (nothing here has been exercised by a human or on another platform):
   - the GUI checklist in [`docs/testing.md`](docs/testing.md) (adding a cover to the real service and showing it live);
-  - Windows and macOS runs (a first install on a Windows church PC found the QtSvg issue fixed in 0.1.1; the fixed build has not been installed there yet);
+  - macOS runs (0.1.1 loads on a Windows church PC with OpenLP 3.1.7, confirmed 2026-11-15; 0.2.0 has not been installed there yet);
   - the CI workflow, which has never run because the repo has no remote yet;
   - a review of the Spanish translation by a native speaker;
   - a live test against a real AI provider (default model ids are unverified).
@@ -121,6 +121,13 @@ Feature-complete. The overnight factory run built the library tab, the editor wi
 How the run was executed, including rework and what the verifiers found, is in [`docs/factory-log.md`](docs/factory-log.md). Task list and evidence: [`odd/tasks/portadas-plugin.md`](odd/tasks/portadas-plugin.md).
 
 ## Changelog
+
+### 0.2.0 (2026-11-15)
+
+- **AI text suggestion:** when the main title, highlighted title and subtitle are all empty and a key verse or readings are given, *Design with AI* also suggests those three texts. They appear in the editor fields for review before saving. If any of them is filled, the AI writes no text, as before. Suggested text goes through the same validation and escaping as typed text.
+- **API key setup:** a *Show* toggle reveals the key being typed (never a saved key), and a *Save key* button stores it only after a successful connection test. *OK* no longer saves a typed key; it warns instead.
+- **Fix:** the cover editor's form now scrolls, so the AI section is reachable on small screens.
+- **Fix:** *Test connection* redacts the typed key in provider errors; a pending *Save key* test is cancelled when the dialog closes; a repaired AI design keeps its suggested text.
 
 ### 0.1.1 (2026-11-08)
 
