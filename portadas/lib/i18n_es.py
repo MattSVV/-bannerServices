@@ -156,10 +156,19 @@ UI = {
         'Paste your API key': 'Pegue su clave de API',
         'Provider:': 'Proveedor:',
         'Request timeout:': 'Tiempo máximo de espera:',
+        'Save key': 'Guardar clave',
         'Server address:': 'Dirección del servidor:',
+        'Show': 'Mostrar',
+        'Show or hide the key you are typing. A saved key is never shown.':
+            'Muestra u oculta la clave que está escribiendo. Una clave guardada nunca se muestra.',
         'Test connection': 'Probar conexión',
         'Testing {host}...': 'Probando {host}...',
         'Testing...': 'Probando...',
+        'Tests the typed key with the provider and saves it only if the test succeeds.':
+            'Prueba la clave escrita con el proveedor y solo la guarda si la prueba tiene éxito.',
+        'The API key was saved.': 'La clave de API se guardó.',
+        'The API key you typed was not saved. Press Save key to test it and save it.':
+            'La clave de API que escribió no se guardó. Pulse Guardar clave para probarla y guardarla.',
         'The API key was not saved: it is empty, too short or long, or contains spaces or unsupported characters.':
             'No se guardó la clave de API: está vacía, es demasiado corta o larga, o contiene espacios o '
             'caracteres no admitidos.',
@@ -178,6 +187,7 @@ UI = {
             'La clave guardada se escribió para {saved}. Escriba la clave de nuevo para {host}.',
         'The saved key will be removed when you press OK.': 'La clave guardada se eliminará al pulsar Aceptar.',
         'The server address was not saved: {error}': 'No se guardó la dirección del servidor: {error}',
+        'Type an API key first.': 'Escriba primero una clave de API.',
         'https://host/v1 or http://localhost:11434/v1': 'https://host/v1 o http://localhost:11434/v1',
     },
 }

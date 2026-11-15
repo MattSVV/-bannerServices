@@ -21,8 +21,10 @@
 """
 The "Covers" page of OpenLP's settings dialog: AI provider, model, server address, timeout and API key.
 
-Only non-secret values go to ``Settings``. The key goes to the ``SecretStore`` and is never shown again: the field stays
-empty and a "saved" hint appears instead. A key is only deleted when the user presses Clear and then OK.
+Only non-secret values go to ``Settings``. The key goes to the ``SecretStore`` and is never shown again: the field
+stays empty and a "saved" hint appears instead. A typed key is stored only by the Save key button, and only after the
+same connection test as Test connection succeeded with it; OK never stores a typed key. The show button reveals just the
+text being typed. A saved key is only deleted when the user presses Clear and then OK.
 """
 import logging
 from urllib.parse import urlsplit
@@ -43,7 +45,7 @@ from ..application.ai_config import (
     validate_base_url,
 )
 from ..application.ports import DesignError, SecretStoreError
-from ..security.redaction import redact
+from ..security.redaction import redact, register_secret
 from .ai_settings import (
     KEY_OK,
     KEY_UNBOUND,
@@ -132,9 +134,16 @@ class PortadasSettingsTab(SettingsTab):
         self.api_key_edit.setObjectName('api_key_edit')
         self.api_key_edit.setEchoMode(QtWidgets.QLineEdit.Password)
         self.api_key_edit.setClearButtonEnabled(False)
+        self.show_key_button = QtWidgets.QPushButton(self.group_box)
+        self.show_key_button.setObjectName('show_key_button')
+        self.show_key_button.setCheckable(True)
+        self.save_key_button = QtWidgets.QPushButton(self.group_box)
+        self.save_key_button.setObjectName('save_key_button')
         self.clear_key_button = QtWidgets.QPushButton(self.group_box)
         key_row = QtWidgets.QHBoxLayout()
         key_row.addWidget(self.api_key_edit)
+        key_row.addWidget(self.show_key_button)
+        key_row.addWidget(self.save_key_button)
         key_row.addWidget(self.clear_key_button)
         self.api_key_label = QtWidgets.QLabel(self.group_box)
         form.addRow(self.api_key_label, key_row)
@@ -152,6 +161,8 @@ class PortadasSettingsTab(SettingsTab):
         self.provider_combo.currentIndexChanged.connect(self.on_provider_changed)
         self.base_url_edit.textChanged.connect(self.refresh_base_url)
         self.clear_key_button.clicked.connect(self.on_clear_key)
+        self.show_key_button.toggled.connect(self.on_show_key_toggled)
+        self.save_key_button.clicked.connect(self.on_save_key)
         self.test_button.clicked.connect(self.on_test_connection)
         log.info('Portadas settings tab created')
 
@@ -166,6 +177,12 @@ class PortadasSettingsTab(SettingsTab):
         self.timeout_spin.setSuffix(translate(context, ' s'))
         self.api_key_label.setText(translate(context, 'API key:'))
         self.clear_key_button.setText(translate(context, 'Clear'))
+        self.show_key_button.setText(translate(context, 'Show'))
+        self.show_key_button.setToolTip(translate(context, 'Show or hide the key you are typing. A saved key is never '
+                                                  'shown.'))
+        self.save_key_button.setText(translate(context, 'Save key'))
+        self.save_key_button.setToolTip(translate(context, 'Tests the typed key with the provider and saves it only if '
+                                                  'the test succeeds.'))
         self.test_button.setText(translate(context, 'Test connection'))
 
     # --- state
@@ -174,6 +191,8 @@ class PortadasSettingsTab(SettingsTab):
 
     def on_provider_changed(self, _index=0):
         self.api_key_edit.clear()  # a key typed for one provider must never be saved for another
+        self._cancel_test()  # a test still running would otherwise save its key under the new provider
+        self._hide_key()
         self.refresh_provider_fields()
 
     def refresh_provider_fields(self):
@@ -244,7 +263,16 @@ class PortadasSettingsTab(SettingsTab):
     def on_clear_key(self):
         self._pending_clear.add(self.selected_provider())
         self.api_key_edit.clear()
+        self._hide_key()
         self.refresh_key_state()
+
+    def on_show_key_toggled(self, shown):
+        """Reveal or mask the text being typed. A stored key is never in the field, so it is never revealed."""
+        self.api_key_edit.setEchoMode(QtWidgets.QLineEdit.Normal if shown else QtWidgets.QLineEdit.Password)
+
+    def _hide_key(self):
+        self.show_key_button.setChecked(False)  # also resets the echo mode through the toggled signal
+        self.api_key_edit.setEchoMode(QtWidgets.QLineEdit.Password)
 
     def current_config(self):
         return AiConfig(provider=self.selected_provider(), model=self.model_edit.text().strip(),
@@ -262,6 +290,7 @@ class PortadasSettingsTab(SettingsTab):
         self.base_url_edit.blockSignals(False)
         self.timeout_spin.setValue(config.timeout)
         self.api_key_edit.clear()
+        self._hide_key()
         self._cancel_test()
         self.test_result_label.clear()
         self._pending_clear.clear()
@@ -288,63 +317,107 @@ class PortadasSettingsTab(SettingsTab):
                                               'The server address was not saved: {error}').format(
                                                   error=localize(str(error))))
         save_ai_config(self.settings, AiConfig(config.provider, config.model, base_url, config.timeout))
-        self._save_key(config.provider, warnings)
+        self._apply_key_removal(config.provider, warnings)
+        if self.api_key_edit.text().strip():
+            warnings.append(translate('PortadasPlugin.SettingsTab', 'The API key you typed was not saved. Press Save '
+                                      'key to test it and save it.'))
         self.api_key_edit.clear()  # the typed key must not linger in the widget
+        self._hide_key()
         self.refresh_key_state()
         if warnings:
             self.show_warning('\n'.join(warnings))
 
-    def _save_key(self, provider, warnings):
-        context = 'PortadasPlugin.SettingsTab'
-        typed = self.api_key_edit.text().strip()
+    def _apply_key_removal(self, provider, warnings):
+        """OK deletes a key the user cleared. It never stores a typed key: that is what Save key is for."""
+        if provider not in self._pending_clear:
+            return
         try:
-            if typed:
-                self.secret_store.set_api_key(provider, typed, origin=self._origin_for_save(provider))
-                self._key_saved[provider] = True
-                self._pending_clear.discard(provider)
-            elif provider in self._pending_clear:
-                self.secret_store.delete_api_key(provider)
-                self._key_saved[provider] = False
-                self._pending_clear.discard(provider)
-        except ValueError:
-            warnings.append(translate(context, 'The API key was not saved: it is empty, too short or long, or contains '
-                                              'spaces or unsupported characters.'))
+            self.secret_store.delete_api_key(provider)
+            self._key_saved[provider] = False
+            self._pending_clear.discard(provider)
         except SecretStoreError as error:
             warnings.append(redact(localize(str(error))))
 
-    def _origin_for_save(self, provider):
-        """The server a typed key is bound to: the saved address of an OpenAI-compatible server, else nothing."""
+    @staticmethod
+    def _origin_for_save(provider, base_url):
+        """The server a typed key is bound to: the address that was tested for an OpenAI-compatible server."""
         if provider != COMPATIBLE:
             return None
         try:
-            return origin_of(load_ai_config(self.settings).base_url)
+            return origin_of(base_url)
         except ValueError:
-            return None  # no valid address was saved: the key stays unverified and must be entered again
+            return None  # no valid address: the key stays unverified and must be entered again
 
     def show_warning(self, text):
         message_box(self, QtWidgets.QMessageBox.Warning, translate('PortadasPlugin.SettingsTab', 'Covers settings'),
                     text)
 
-    # --- test connection
+    # --- test connection and save key
     def on_test_connection(self):
         provider = self.selected_provider()
         typed = self.api_key_edit.text().strip()
         api_key = typed or self._stored_key(provider)
-        config, probe = self.current_config(), self.test_connection
-        self._cancel_test()
         state = self._server_state(provider)
+        self._cancel_test()
         if api_key and not typed and state is not None and state[1] != KEY_OK:
             # The stored key belongs to another server (an imported settings file may have changed the address).
             self.test_result_label.setText(key_block_message(state[1], state[0]))
             return
-        self.test_button.setEnabled(False)
+        self._start_probe(api_key, state)
+
+    def on_save_key(self):
+        """Test the typed key like Test connection does and store it only when the test succeeds."""
+        provider = self.selected_provider()
+        typed = self.api_key_edit.text().strip()
+        self._cancel_test()
+        if not typed:
+            self.test_result_label.setText(translate('PortadasPlugin.SettingsTab', 'Type an API key first.'))
+            return
+        config = self.current_config()
+        if provider == COMPATIBLE:
+            try:
+                validate_base_url(config.base_url)
+            except ValueError as error:
+                self.test_result_label.setText(localize(str(error)))
+                return
+        register_secret(typed)  # redact it from any provider message shown from now on
+        origin = self._origin_for_save(provider, config.base_url)
+        self._start_probe(typed, self._server_state(provider),
+                          on_success=lambda message: self._store_tested_key(provider, typed, origin, message))
+
+    def _store_tested_key(self, provider, key, origin, message):
+        context = 'PortadasPlugin.SettingsTab'
+        try:
+            self.secret_store.set_api_key(provider, key, origin=origin)
+        except ValueError:
+            self.test_result_label.setText(translate(context, 'The API key was not saved: it is empty, too short or '
+                                                     'long, or contains spaces or unsupported characters.'))
+            return
+        except SecretStoreError as error:
+            self.test_result_label.setText(redact(localize(str(error))))
+            return
+        self._key_saved[provider] = True
+        self._pending_clear.discard(provider)
+        self.api_key_edit.clear()
+        self._hide_key()
+        self.refresh_key_state()
+        self.test_result_label.setText(redact(localize(message)) + ' ' + translate(context, 'The API key was saved.'))
+
+    def _start_probe(self, api_key, state, on_success=None):
+        config, probe = self.current_config(), self.test_connection
+        self._set_testing(True)
         if state is not None:
             self.test_result_label.setText(translate('PortadasPlugin.SettingsTab', 'Testing {host}...').format(
                 host=state[0]))
         else:
             self.test_result_label.setText(translate('PortadasPlugin.SettingsTab', 'Testing...'))
-        self._test_job = run_in_background(lambda: self._probe(probe, config, api_key), self._test_done,
-                                           self._test_failed)
+        self._test_job = run_in_background(lambda: self._probe(probe, config, api_key),
+                                           lambda message: self._test_done(message, on_success), self._test_failed)
+
+    def _set_testing(self, testing):
+        """Save key and Test connection are never available while a test is running."""
+        self.test_button.setEnabled(not testing)
+        self.save_key_button.setEnabled(not testing)
 
     @staticmethod
     def _probe(probe, config, api_key):
@@ -357,18 +430,21 @@ class PortadasSettingsTab(SettingsTab):
             log.warning('The connection test failed (%s).', type(error).__name__)
             raise DesignError(redact(str(error)) or type(error).__name__) from None
 
-    def _test_done(self, message):
+    def _test_done(self, message, on_success=None):
         self._test_job = None
-        self.test_button.setEnabled(True)
+        self._set_testing(False)
+        if on_success is not None:
+            on_success(message)
+            return
         self.test_result_label.setText(redact(localize(message)))
 
     def _test_failed(self, message):
         self._test_job = None
-        self.test_button.setEnabled(True)
+        self._set_testing(False)
         self.test_result_label.setText(redact(localize(message)))
 
     def _cancel_test(self):
         if self._test_job is not None:
             self._test_job.cancel()
             self._test_job = None
-        self.test_button.setEnabled(True)
+        self._set_testing(False)

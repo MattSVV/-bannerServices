@@ -28,7 +28,7 @@ from contrib.plugins.portadas.lib.ai_designer import make_designer
 from contrib.plugins.portadas.lib.ai_settings import BASE_URL_KEY, PROVIDER_KEY
 from contrib.plugins.portadas.security import redaction
 
-from .test_settings_tab import FAKE, NEW, MemoryStore, Tab, wait_for_result
+from .test_settings_tab import FAKE, NEW, MemoryStore, Tab, save_key, wait_for_result
 
 HOME = 'https://llm.example.org/v1'
 EVIL = 'https://evil.example.net/v1'
@@ -158,7 +158,7 @@ def test_a_stored_key_for_another_server_blocks_even_a_local_keyless_address():
     assert 'localhost:11434' in message
 
 
-def test_entering_the_key_again_in_the_settings_tab_unblocks_the_design(make_tab):
+def test_entering_the_key_again_in_the_settings_tab_unblocks_the_design(make_tab, qtbot):
     store = MemoryStore({'openai_compatible': FAKE}, origins={'openai_compatible': origin_of(EVIL)})
     blocked_message(store)
     tab = make_tab(store)
@@ -166,7 +166,7 @@ def test_entering_the_key_again_in_the_settings_tab_unblocks_the_design(make_tab
     tab.base_url_edit.setText(HOME)
     tab.api_key_edit.setText(NEW)
 
-    tab.save()
+    save_key(qtbot, tab)
 
     seen = []
     make_designer(config(), store, create=lambda cfg, key: seen.append(key))
@@ -195,20 +195,21 @@ def test_fixed_providers_ignore_the_origin():
 @pytest.fixture
 def make_tab(qtbot, openlp_env):
     def make(store, **kwargs):
+        kwargs.setdefault('test_connection', lambda cfg, key: 'Connected.')
         tab = Tab(None, 'portadas', 'Covers', None, secret_store=store, **kwargs)
         qtbot.addWidget(tab)
         return tab
     return make
 
 
-def test_saving_a_key_for_a_server_binds_it_to_that_server(make_tab):
+def test_saving_a_key_for_a_server_binds_it_to_that_server(make_tab, qtbot):
     store = MemoryStore()
     tab = make_tab(store)
     tab.provider_combo.setCurrentIndex(tab.provider_combo.findData('openai_compatible'))
     tab.base_url_edit.setText(HOME)
     tab.api_key_edit.setText(NEW)
 
-    tab.save()
+    save_key(qtbot, tab)
 
     assert store.origins == {'openai_compatible': origin_of(HOME)}
 

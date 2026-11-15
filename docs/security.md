@@ -81,7 +81,12 @@ that the key never appears in OpenLP's settings or their export, in logs, in the
 - **Keyring.** The OS keyring is not used: it needs a dependency OpenLP does not ship (see the dependency budget).
 - **UI.** The key field is a password field. A stored key is never shown again: the field stays empty and says
   "saved". Removing it takes **Clear** and then **OK** (Cancel keeps it). A key typed for one provider is dropped when
-  the user switches provider, so it can never be saved under the wrong one.
+  the user switches provider, so it can never be saved under the wrong one. A typed key is stored only by **Save key**,
+  which first runs the same connection test as **Test connection** with that key (in the background) and writes the
+  store only if it succeeds; a failed test shows the redacted reason and writes nothing, and **OK** never stores a typed
+  key (it warns that the key was not saved). The key is bound to the origin that was tested. The **Show** button only
+  reveals the text currently typed in the field (it resets to hidden on load, save and provider change); a stored key is
+  never in the field, so it can never be revealed.
 - **Server address.** For OpenAI-compatible servers only `https://` is accepted, plus `http://` to `localhost`,
   `127.0.0.1` or `::1`. User names and passwords in the URL, queries and fragments are refused, because URLs end up in
   logs and error messages.
@@ -114,7 +119,7 @@ request URL (Gemini accepts `?key=`).
 | Key leaks into `openlp.log` | Redaction filter, no deliberate logging | A key of an unknown shape that was never stored here cannot be recognised |
 | Symlink or file swapped by another user | `lstat` checks, ownership check, atomic rename | A time-of-check race by the same user is not defended |
 | Malware running as the same user | None: any program that can run the plugin can read what the plugin can read | Accepted. Use provider-side spending limits and revoke leaked keys |
-| Shoulder surfing | Password echo mode, key never shown again | A key can be seen while being typed if the user reveals it with the OS |
+| Shoulder surfing | Password echo mode by default, key never shown again; Show reveals only the text being typed | A typed key is visible while Show is on, and via OS tools |
 
 ### AI provider calls (`portadas/adapters/ai/`, T12)
 

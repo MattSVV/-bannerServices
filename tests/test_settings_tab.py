@@ -132,7 +132,7 @@ def test_save_writes_only_non_secret_values_to_settings(make_tab, openlp_env):
     tab.save()
 
     assert load_ai_config(openlp_env) == AiConfig('openai_compatible', 'qwen2.5:7b', 'http://localhost:11434/v1', 90)
-    assert store.keys == {'openai_compatible': NEW}
+    assert store.keys == {}  # OK never saves a typed key: only Save key does, after a successful test
     assert NEW not in all_settings_text(openlp_env)
     assert 'sk-' not in all_settings_text(openlp_env)
     assert tab.api_key_edit.text() == ''  # the typed key does not linger in the widget
@@ -178,36 +178,37 @@ def test_clear_deletes_the_key_on_save_but_not_on_cancel(make_tab):
     assert 'No API key' in tab.key_status_label.text()
 
 
-def test_a_key_is_stored_under_the_provider_that_was_selected(make_tab):
+def test_a_key_is_stored_under_the_provider_that_was_selected(make_tab, qtbot):
     store = MemoryStore()
-    tab = make_tab(store)
+    tab = make_tab(store, test_connection=lambda config, api_key: 'Connected.')
     tab.provider_combo.setCurrentIndex(tab.provider_combo.findData('anthropic'))
     tab.api_key_edit.setText(NEW)
 
-    tab.save()
+    save_key(qtbot, tab)
 
     assert store.keys == {'anthropic': NEW}
 
 
-def test_an_unusable_key_is_reported_and_not_stored(make_tab):
+def test_an_unusable_key_is_reported_and_not_stored(make_tab, qtbot):
     store = MemoryStore()
-    tab = make_tab(store)
+    tab = make_tab(store, test_connection=lambda config, api_key: 'Connected.')
     tab.api_key_edit.setText('two words')
 
-    tab.save()
+    save_key(qtbot, tab)
 
     assert store.keys == {}
-    assert tab.warnings and 'two words' not in ' '.join(tab.warnings)
+    assert 'not saved' in tab.test_result_label.text() and 'two words' not in tab.test_result_label.text()
 
 
-def test_a_store_failure_is_reported_without_the_key(make_tab, openlp_env):
-    tab = make_tab(MemoryStore(fail_on_set=True))
+def test_a_store_failure_is_reported_without_the_key(make_tab, openlp_env, qtbot):
+    tab = make_tab(MemoryStore(fail_on_set=True), test_connection=lambda config, api_key: 'Connected.')
     tab.api_key_edit.setText(NEW)
     tab.timeout_spin.setValue(45)
 
+    save_key(qtbot, tab)
     tab.save()
 
-    assert tab.warnings and NEW not in ' '.join(tab.warnings)
+    assert 'could not be saved' in tab.test_result_label.text() and NEW not in tab.test_result_label.text()
     assert load_ai_config(openlp_env).timeout == 45  # the other settings are still saved
 
 
@@ -253,6 +254,12 @@ def test_a_corrupt_stored_provider_falls_back_to_the_default(make_tab, openlp_en
 
 def wait_for_result(qtbot, tab, text='Testing...'):
     qtbot.waitUntil(lambda: tab.test_button.isEnabled() and tab.test_result_label.text() != text, timeout=5000)
+
+
+def save_key(qtbot, tab):
+    """Press Save key and wait until the test and the save finished."""
+    tab.save_key_button.click()
+    qtbot.waitUntil(lambda: tab.save_key_button.isEnabled() and tab.test_button.isEnabled(), timeout=5000)
 
 
 def test_test_connection_uses_the_real_adapter_by_default(make_tab, qtbot):
@@ -351,3 +358,137 @@ def test_a_legacy_background_key_in_old_settings_is_ignored(make_tab, openlp_env
     assert load_ai_config(openlp_env) == AiConfig('openai', '', '', DEFAULT_TIMEOUT)
     assert tab.timeout_spin.value() == DEFAULT_TIMEOUT
     tab.save()  # saving over an old file must not break
+
+
+# --- Save key: test first, save only on success; show/hide the typed text ---------------------------------------------
+
+def test_save_key_tests_the_typed_key_and_stores_it_once_on_success(make_tab, qtbot):
+    store = MemoryStore()
+    calls = []
+    tab = make_tab(store, test_connection=lambda config, api_key: calls.append(api_key) or 'Connected.')
+    tab.api_key_edit.setText(f'  {NEW}  ')
+
+    save_key(qtbot, tab)
+
+    assert calls == [NEW] and store.keys == {'openai': NEW}
+    assert tab.api_key_edit.text() == ''  # the typed key does not linger in the widget
+    assert tab.api_key_edit.placeholderText() == SAVED_PLACEHOLDER and tab.clear_key_button.isEnabled()
+    assert 'Connected.' in tab.test_result_label.text() and 'saved' in tab.test_result_label.text()
+    assert NEW not in tab.test_result_label.text() + tab.key_status_label.text()
+
+
+def test_a_failed_test_never_writes_the_key_store(make_tab, qtbot):
+    store = MemoryStore({'openai': FAKE})
+    writes = []
+    original = store.set_api_key
+    store.set_api_key = lambda *args, **kwargs: writes.append(args) or original(*args, **kwargs)
+
+    def probe(config, api_key):
+        raise RuntimeError(f'401 for key {api_key}')
+
+    tab = make_tab(store, test_connection=probe)
+    tab.api_key_edit.setText(NEW)
+
+    save_key(qtbot, tab)
+
+    assert writes == [] and store.keys == {'openai': FAKE}
+    assert '401' in tab.test_result_label.text() and NEW not in tab.test_result_label.text()
+    assert tab.api_key_edit.text() == NEW  # kept so the user can correct it
+
+
+def test_save_key_without_typed_text_does_nothing(make_tab):
+    calls = []
+    tab = make_tab(test_connection=lambda config, api_key: calls.append(api_key))
+
+    tab.save_key_button.click()
+
+    assert calls == [] and tab._test_job is None
+    assert tab.test_result_label.text()  # tells the user to type a key first
+
+
+def test_save_and_test_are_disabled_while_the_key_is_being_tested(make_tab, qtbot):
+    release = threading.Event()
+
+    def slow(config, api_key):
+        release.wait(5)
+        return 'Connected.'
+
+    tab = make_tab(test_connection=slow)
+    tab.api_key_edit.setText(NEW)
+
+    tab.save_key_button.click()
+
+    assert not tab.save_key_button.isEnabled() and not tab.test_button.isEnabled()
+    release.set()
+    qtbot.waitUntil(lambda: tab.save_key_button.isEnabled() and tab.test_button.isEnabled(), timeout=5000)
+
+
+def test_ok_with_a_typed_but_unsaved_key_writes_nothing_and_warns(make_tab):
+    store = MemoryStore()
+    tab = make_tab(store)
+    tab.api_key_edit.setText(NEW)
+
+    tab.save()
+
+    assert store.keys == {}
+    assert tab.warnings and 'Save key' in ' '.join(tab.warnings) and NEW not in ' '.join(tab.warnings)
+    assert tab.api_key_edit.text() == ''
+
+
+def test_ok_without_a_typed_key_does_not_warn(make_tab):
+    tab = make_tab(MemoryStore({'openai': FAKE}))
+
+    tab.save()
+
+    assert tab.warnings is None
+
+
+def test_the_show_toggle_flips_the_echo_mode_of_the_typed_text_only(make_tab):
+    tab = make_tab(MemoryStore({'openai': FAKE}))
+    assert tab.api_key_edit.echoMode() == tab.api_key_edit.Password
+    assert tab.show_key_button.isCheckable() and not tab.show_key_button.isChecked()
+    tab.api_key_edit.setText(NEW)
+
+    tab.show_key_button.click()
+
+    assert tab.api_key_edit.echoMode() == tab.api_key_edit.Normal and tab.api_key_edit.text() == NEW
+    tab.show_key_button.click()
+    assert tab.api_key_edit.echoMode() == tab.api_key_edit.Password
+    assert tab.api_key_edit.text() == NEW
+    assert FAKE not in tab.api_key_edit.text() + tab.api_key_edit.placeholderText()  # a stored key is never shown
+
+
+def test_the_key_is_hidden_again_on_load_save_and_provider_change(make_tab, qtbot):
+    tab = make_tab(test_connection=lambda config, api_key: 'Connected.')
+
+    for action in (tab.load, tab.save, lambda: tab.provider_combo.setCurrentIndex(1),
+                   lambda: save_key(qtbot, tab)):
+        tab.api_key_edit.setText(NEW)
+        tab.show_key_button.setChecked(True)
+        assert tab.api_key_edit.echoMode() == tab.api_key_edit.Normal
+        action()
+        assert tab.api_key_edit.echoMode() == tab.api_key_edit.Password and not tab.show_key_button.isChecked()
+
+
+def test_changing_the_provider_drops_a_key_test_in_flight(make_tab, qtbot):
+    release = threading.Event()
+    store = MemoryStore()
+    tab = make_tab(store, test_connection=lambda config, api_key: release.wait(5) and 'Connected.')
+    tab.api_key_edit.setText(NEW)
+    tab.save_key_button.click()
+
+    tab.provider_combo.setCurrentIndex(tab.provider_combo.findData('gemini'))
+    release.set()
+    qtbot.wait(150)
+
+    assert store.keys == {} and tab.save_key_button.isEnabled() and tab.test_button.isEnabled()
+
+
+def test_clear_then_ok_still_deletes_the_key(make_tab):
+    store = MemoryStore({'openai': FAKE})
+    tab = make_tab(store)
+
+    tab.clear_key_button.click()
+    tab.save()
+
+    assert store.keys == {}
