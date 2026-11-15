@@ -467,3 +467,18 @@ def test_template_thumbnails_render_lazily_one_at_a_time_and_are_cached(openlp_e
     settle(again, qtbot)
     services.renderer.finish()
     assert services.renderer.pending == []  # cached: no thumbnail renders this time
+
+
+def test_the_ai_section_is_inside_a_scroll_area_and_reachable_on_a_short_screen(qtbot, form):
+    """On a short screen the form column scrolls, so Design with AI can always be brought into view."""
+    form.resize(1180, 600)
+    form.show()
+    qtbot.waitExposed(form)
+    area = form.form_scroll_area
+    assert isinstance(area, QtWidgets.QScrollArea)
+    assert area.isAncestorOf(form.design_button)
+    assert area.widgetResizable()
+    area.ensureWidgetVisible(form.design_button)
+    visible = area.viewport().rect()
+    top_left = form.design_button.mapTo(area.viewport(), QtCore.QPoint(0, 0))
+    assert visible.contains(QtCore.QRect(top_left, form.design_button.size()))
