@@ -22,6 +22,7 @@
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -60,11 +61,12 @@ def test_save_then_get_round_trips_and_writes_png_and_json(repo, tmp_path):
     repo.save(cover, PNG)
 
     assert repo.get('c1') == cover
-    assert (tmp_path / 'store' / 'c1.png').read_bytes() == PNG
     stored = json.loads((tmp_path / 'store' / 'c1.json').read_text(encoding='utf-8'))
     assert stored['schema_version'] == 1 and stored['title_main'] == 'Resistir'
-    assert repo.png_path('c1') == tmp_path / 'store' / 'c1.png'
-    assert sorted(path.name for path in (tmp_path / 'store').iterdir()) == ['c1.json', 'c1.png']
+    assert re.fullmatch(r'c1\.[0-9a-f]+\.png', stored['image'])
+    assert repo.png_path('c1') == tmp_path / 'store' / stored['image']
+    assert repo.png_path('c1').read_bytes() == PNG
+    assert sorted(path.name for path in (tmp_path / 'store').iterdir()) == sorted(['c1.json', stored['image']])
 
 
 def test_saving_again_replaces_the_cover(repo):
@@ -283,6 +285,7 @@ def test_a_failure_while_saving_the_json_leaves_no_half_written_new_cover(repo, 
 def test_a_failed_overwrite_keeps_the_previous_cover_intact(repo, monkeypatch):
     original = make_cover()
     repo.save(original, PNG)
+    before = sorted(path.name for path in repo.root.iterdir())
     fail_second_replace(monkeypatch, 2)
 
     with pytest.raises(RepositoryError):
@@ -290,7 +293,8 @@ def test_a_failed_overwrite_keeps_the_previous_cover_intact(repo, monkeypatch):
 
     monkeypatch.undo()
     assert repo.get('c1') == original
-    assert sorted(path.name for path in repo.root.iterdir()) == ['c1.json', 'c1.png']
+    assert repo.png_path('c1').read_bytes() == PNG
+    assert sorted(path.name for path in repo.root.iterdir()) == before
 
 
 def test_a_failure_writing_the_png_leaves_nothing_behind(repo, monkeypatch):
@@ -440,7 +444,7 @@ def test_the_json_is_the_commit_marker_of_a_save(repo, monkeypatch):
     monkeypatch.setattr(file_repository.os, 'replace', spy)
     repo.save(make_cover(), PNG)
 
-    assert order == ['c1.png', 'c1.json']
+    assert re.fullmatch(r'c1\.[0-9a-f]+\.png', order[0]) and order[1:] == ['c1.json'] and len(order) == 2
 
 
 # --- T12b: one damaged entry never hides the others ------------------------------------------------------------------
@@ -475,3 +479,134 @@ def test_an_unexpected_error_while_reading_one_entry_skips_only_that_entry(repo,
     with caplog.at_level(logging.WARNING):
         assert [cover.id for cover in repo.list()] == ['ok']
     assert 'bad' in caplog.text
+
+
+# --- every render gets a new file name (OpenLP's display caches images by URL) ----------------------------------------
+
+def stored_pngs(repo, cover_id='c1'):
+    return sorted(path.name for path in repo.root.glob(f'{cover_id}*.png'))
+
+
+def test_two_saves_of_the_same_cover_yield_different_png_paths(repo):
+    repo.save(make_cover(), PNG)
+    first = repo.png_path('c1')
+
+    repo.save(make_cover(), PNG + b'2')
+    second = repo.png_path('c1')
+
+    assert first != second
+    assert second.read_bytes() == PNG + b'2'
+    assert first.read_bytes() == PNG  # the old version stays, so service items already in the order still load
+
+
+def test_only_the_newest_versions_are_kept(repo):
+    paths = []
+    for number in range(6):
+        repo.save(make_cover(), PNG + bytes([number]))
+        paths.append(repo.png_path('c1'))
+
+    assert len(set(paths)) == 6
+    assert sorted(path.name for path in repo.root.glob('c1.*.png')) == sorted(path.name for path in paths[-3:])
+    assert repo.png_path('c1') == paths[-1]
+
+
+def test_versions_of_other_covers_are_never_pruned(repo):
+    repo.save(make_cover('a'), PNG)
+    repo.save(make_cover('a-1f'), PNG)
+    other = repo.png_path('a-1f')
+    for _ in range(5):
+        repo.save(make_cover('a'), PNG)
+
+    assert other.exists() and repo.get('a-1f').id == 'a-1f'
+
+
+def test_a_legacy_cover_keeps_working_and_the_next_save_migrates_it(repo, tmp_path):
+    repo.save(make_cover(), PNG)
+    store = tmp_path / 'store'
+    current = repo.png_path('c1')
+    legacy = store / 'c1.png'
+    current.rename(legacy)  # the layout of releases before versioned names
+    data = json.loads((store / 'c1.json').read_text(encoding='utf-8'))
+    del data['image']
+    (store / 'c1.json').write_text(json.dumps(data), encoding='utf-8')
+
+    assert repo.png_path('c1') == legacy
+    assert repo.get('c1') == make_cover()
+    assert [cover.id for cover in repo.list()] == ['c1']
+
+    repo.save(make_cover(), PNG + b'2')
+
+    assert repo.png_path('c1') != legacy
+    assert repo.png_path('c1').read_bytes() == PNG + b'2'
+    assert legacy.exists()  # an old version, pruned like the others later
+
+
+def test_delete_removes_every_version(repo, tmp_path):
+    for _ in range(3):
+        repo.save(make_cover(), PNG)
+    (tmp_path / 'store' / 'c1.png').write_bytes(PNG)  # a leftover legacy file
+
+    repo.delete('c1')
+
+    assert list((tmp_path / 'store').iterdir()) == []
+
+
+def test_a_png_that_cannot_be_pruned_never_breaks_saving_and_is_pruned_next_time(repo, tmp_path, monkeypatch, caplog):
+    for _ in range(3):
+        repo.save(make_cover(), PNG)
+    oldest = sorted(repo.root.glob('c1.*.png'))[0]
+    real_unlink = type(tmp_path).unlink
+
+    def locked(self, *args, **kwargs):
+        if self == oldest:
+            raise PermissionError('in use')
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(tmp_path), 'unlink', locked)
+    with caplog.at_level(logging.WARNING):
+        repo.save(make_cover(), PNG + b'4')  # must not raise
+
+    assert oldest.exists() and repo.png_path('c1').read_bytes() == PNG + b'4'
+    assert any('prune' in record.getMessage().lower() for record in caplog.records)
+
+    monkeypatch.undo()
+    repo.save(make_cover(), PNG + b'5')
+
+    assert not oldest.exists()
+    assert len(list(repo.root.glob('c1.*.png'))) == 3
+
+
+def test_a_failed_save_keeps_the_previous_image_and_leaves_no_new_one(repo, monkeypatch):
+    repo.save(make_cover(), PNG)
+    before = (repo.png_path('c1'), stored_pngs(repo))
+
+    real = os.replace
+
+    def broken(source, target):
+        if str(target).endswith('.json'):
+            raise OSError(28, 'No space left on device')
+        return real(source, target)
+
+    monkeypatch.setattr(file_repository.os, 'replace', broken)
+    with pytest.raises(RepositoryError):
+        repo.save(make_cover(), PNG + b'2')
+    monkeypatch.undo()
+
+    assert (repo.png_path('c1'), stored_pngs(repo)) == before
+    assert repo.png_path('c1').read_bytes() == PNG
+
+
+@pytest.mark.parametrize('name', ['../evil.png', 'c1.png/../../x.png', '/etc/passwd', 'other.0.png', 'c1.zz.png',
+                                  'c1.0.png\x00', 7, None, ['c1.0.png'], 'c1.0.PNG', 'sub/c1.0.png'])
+def test_a_recorded_file_name_is_validated_and_never_leaves_the_store(repo, tmp_path, name):
+    repo.save(make_cover(), PNG)
+    store = tmp_path / 'store'
+    data = json.loads((store / 'c1.json').read_text(encoding='utf-8'))
+    data['image'] = name
+    (store / 'c1.json').write_text(json.dumps(data), encoding='utf-8')
+    (tmp_path / 'evil.png').write_bytes(PNG)
+
+    with pytest.raises(CoverNotFound):  # the invalid name is ignored: there is no legacy `c1.png` either
+        repo.png_path('c1')
+    with pytest.raises(CoverCorrupt):
+        repo.get('c1')

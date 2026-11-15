@@ -35,8 +35,12 @@ class CoverDataError(DomainError):
     """Stored cover data is malformed, incomplete or of an unsupported schema version."""
 
 
-def cover_to_dict(cover):
-    """Return the plain-data form of ``cover`` (strings, lists and dicts only), tagged with the schema version."""
+def cover_to_dict(cover, image=None):
+    """
+    Return the plain-data form of ``cover`` (strings, lists and dicts only), tagged with the schema version.
+
+    :param image: the file name of the cover's current PNG, recorded by the repository (not part of the domain).
+    """
     data = {
         'schema_version': SCHEMA_VERSION,
         'id': cover.id,
@@ -53,12 +57,14 @@ def cover_to_dict(cover):
     }
     if cover.custom_template_html is not None:  # additive key: schema 1 readers that do not know it ignore it
         data['custom_template_html'] = cover.custom_template_html
+    if image is not None:  # additive key too: covers saved before versioned images simply do not have it
+        data['image'] = image
     return data
 
 
-def cover_to_json(cover):
+def cover_to_json(cover, image=None):
     """Return ``cover`` as readable UTF-8 JSON text."""
-    return json.dumps(cover_to_dict(cover), ensure_ascii=False, indent=2) + '\n'
+    return json.dumps(cover_to_dict(cover, image), ensure_ascii=False, indent=2) + '\n'
 
 
 def cover_from_json(text):

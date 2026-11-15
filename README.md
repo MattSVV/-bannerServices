@@ -122,6 +122,10 @@ How the run was executed, including rework and what the verifiers found, is in [
 
 ## Changelog
 
+### Unreleased
+
+- **Fix:** after editing a saved cover, the slide thumbnails showed the new image but the Preview and Live screens kept the old one. OpenLP's display loads images by file URL and can serve a cached picture for a URL it has already seen, and the plugin rewrote the image at the same path. Every save now writes the image under a new file name (the newest three versions are kept, so covers already in the service order still open).
+
 ### 0.2.0 (2026-11-15)
 
 - **AI text suggestion:** when the main title, highlighted title and subtitle are all empty and a key verse or readings are given, *Design with AI* also suggests those three texts. They appear in the editor fields for review before saving. If any of them is filled, the AI writes no text, as before. Suggested text goes through the same validation and escaping as typed text.

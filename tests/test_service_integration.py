@@ -63,7 +63,7 @@ def test_generate_slide_data_builds_an_image_service_item(item, services):
     assert slide['path'] == services.repository.png_path('one')
     assert slide['title'] == 'Resistir al diablo.png'
     assert slide['file_hash'] == sha256_file_hash(services.repository.png_path('one'))
-    assert slide['thumbnail'] == services.thumbnail_dir / 'one.png'
+    assert slide['thumbnail'] == services.thumbnail_dir / services.repository.png_path('one').name
     assert slide['thumbnail'].exists()
     assert service_item.theme == -1
 
@@ -114,7 +114,7 @@ def test_a_cover_that_vanished_reports_an_error_unless_remote(item, services):
 
 def test_a_missing_png_is_handled(item, services):
     select(item, 0)
-    (services.repository.png_dir / 'two.png').unlink()
+    services.repository.png_path('two').unlink()
 
     with pytest.raises(CoverNotFound):
         services.repository.png_path('two')
@@ -195,7 +195,7 @@ def test_a_saved_service_still_opens_after_the_cover_is_deleted(item, services, 
     file_hash = original.slides[0]['file_hash']
     shutil.copy(png, service_dir / f'{file_hash}.png')
     (service_dir / 'thumbnails').mkdir()
-    shutil.copy(original.slides[0]['thumbnail'], service_dir / 'thumbnails' / 'one.png')
+    shutil.copy(original.slides[0]['thumbnail'], service_dir / 'thumbnails' / original.slides[0]['thumbnail'].name)
 
     services.repository.delete('one')
     png.unlink()
@@ -225,4 +225,19 @@ def test_the_service_manager_writes_the_png_and_its_thumbnail_into_the_service_f
     names = {str(target) for _, target in write_list}
     assert f'{original.slides[0]["file_hash"]}.png' in names
     assert missing == []
-    assert 'thumbnails/one.png' in names
+    assert f'thumbnails/{original.slides[0]["thumbnail"].name}' in names
+
+
+def test_editing_a_cover_points_new_service_items_at_the_new_image_and_keeps_the_old_one(item, services):
+    """Regression: OpenLP's display caches images by URL, so an edited cover needs a new path, not new bytes."""
+    before = build(item, 2).slides[0]
+    old_path = before['path']
+
+    services.repository.save(services.repository.get('one'), png_bytes(16, 9, b'\x00\xff\x00'))
+    after = build(item, 2).slides[0]
+
+    assert after['path'] != old_path
+    assert after['path'] == services.repository.png_path('one')
+    assert after['thumbnail'] != before['thumbnail']
+    assert after['file_hash'] != before['file_hash']
+    assert old_path.exists()  # a service item already in the order still loads

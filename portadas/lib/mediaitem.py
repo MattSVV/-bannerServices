@@ -38,7 +38,7 @@ from openlp.core.lib.ui import create_widget_action
 from openlp.core.ui.icons import UiIcons
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from ..application.ports import RepositoryError
+from ..application.ports import KEPT_IMAGE_VERSIONS, RepositoryError
 from .dialogs import message_box, plain_tooltip
 from .editform import CoverEditForm
 from .i18n import localize
@@ -221,8 +221,10 @@ class PortadasMediaItem(MediaManagerItem):
             list_item = self.list_view.item(row)
             list_item.setHidden(bool(needle) and needle not in _fold(list_item.text()))
 
-    def _thumbnail_path(self, cover_id):
-        return self.services.thumbnail_dir / f'{cover_id}.png'
+    def _thumbnail_path(self, png_path):
+        """The thumbnail of one image version. It shares the image's file name, which changes on every save, so no
+        Qt or display cache key is ever reused for a different picture."""
+        return self.services.thumbnail_dir / Path(png_path).name
 
     def _thumbnail_icon(self, cover_id):
         """The cached thumbnail of a cover as an icon, created or refreshed from its PNG; ``None`` without image."""
@@ -234,7 +236,7 @@ class PortadasMediaItem(MediaManagerItem):
         return None if thumbnail is None else build_icon(thumbnail)
 
     def _ensure_thumbnail(self, cover_id, png_path):
-        thumbnail = self._thumbnail_path(cover_id)
+        thumbnail = self._thumbnail_path(png_path)
         try:
             if not validate_thumb(png_path, thumbnail):
                 thumbnail.parent.mkdir(parents=True, exist_ok=True)
@@ -244,11 +246,29 @@ class PortadasMediaItem(MediaManagerItem):
             return None
         return thumbnail if thumbnail.exists() else None
 
-    def _forget_thumbnail(self, cover_id):
+    def _cover_thumbnails(self, cover_id):
+        """The thumbnails of every version of a cover, oldest first (``<id>.png`` is the legacy one)."""
+        folder = self.services.thumbnail_dir
+        if not folder.is_dir():
+            return []
+        found = [path for path in folder.iterdir()
+                 if path.suffix == '.png' and (path.stem == cover_id or path.stem.startswith(f'{cover_id}.')
+                                                and '.' not in path.stem[len(cover_id) + 1:])]
+        return sorted(found, key=lambda path: (path.stem != cover_id, len(path.stem), path.stem))
+
+    def _forget_thumbnail(self, cover_id, keep=0):
+        """Remove the thumbnails of a cover except the newest ``keep`` (all of them by default)."""
         try:
-            self._thumbnail_path(cover_id).unlink(missing_ok=True)
+            doomed = self._cover_thumbnails(cover_id)
+            doomed = doomed[:-keep] if keep else doomed
         except OSError as error:
-            log.warning('Could not remove the thumbnail of cover "%s": %s', cover_id, error)
+            log.warning('Could not list the thumbnails of cover "%s": %s', cover_id, error)
+            return
+        for thumbnail in doomed:
+            try:
+                thumbnail.unlink(missing_ok=True)
+            except OSError as error:  # in use on Windows: the next save tries again
+                log.warning('Could not remove the thumbnail of cover "%s": %s', cover_id, error)
 
     def _selected_ids(self):
         return [self.list_view.item(row).data(QtCore.Qt.UserRole) for row in range(self.list_view.count())
@@ -280,9 +300,9 @@ class PortadasMediaItem(MediaManagerItem):
         finally:
             form.deleteLater()  # the dialog is parented to this item: without this every edit would leak one
         if accepted:
-            self._forget_thumbnail(saved.id)
             self.auto_select_id = saved.id
-            self.load_list()
+            self.load_list()  # creates the thumbnail of the new image first, then the oldest ones are dropped
+            self._forget_thumbnail(saved.id, keep=KEPT_IMAGE_VERSIONS)
 
     def on_delete_click(self):
         if not check_item_selected(self.list_view, translate('PortadasPlugin.MediaItem',

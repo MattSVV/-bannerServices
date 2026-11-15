@@ -75,7 +75,7 @@ To check it, choose Spanish in OpenLP and restart: the media tab reads **Portada
 | What | Where | Notes |
 |------|-------|-------|
 | Plugin code, templates, fonts | `<DataDir>/contrib/plugins/portadas/` | Replaced on update, removed on uninstall |
-| Covers (`<id>.png` and `<id>.json`) | `<OpenLP data folder>/portadas/` | Follows a custom or portable data folder (`applocation.py:75-90,112-120`) |
+| Covers (`<id>.json` and its PNG, `<id>.<version>.png`; older releases stored `<id>.png`) | `<OpenLP data folder>/portadas/` | Follows a custom or portable data folder (`applocation.py:75-90,112-120`) |
 | AI key file | `<OpenLP data folder>/portadas/secrets/api-keys` | Owner-only permissions. Never part of OpenLP's settings export. |
 | On/off status | OpenLP settings (`portadas/status`) | Included in a settings export |
 

@@ -23,6 +23,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 DEFAULT_SIZE = (1920, 1080)
+KEPT_IMAGE_VERSIONS = 3  # PNG versions (and thumbnails) kept per cover: service items already in the order use them
 
 
 class RenderError(Exception):
@@ -132,6 +133,9 @@ class CoverRepository(ABC):
     def png_path(self, cover_id):
         """
         Return the path of the stored PNG, for thumbnails and for adding it to a service. Treat it as read-only.
+
+        Every save gives the image a new file name (OpenLP's display caches images by URL, so a replaced file at the
+        same path would keep showing the old picture); the older versions stay for ``KEPT_IMAGE_VERSIONS`` saves.
 
         :raises CoverNotFound: when there is no such cover.
         """

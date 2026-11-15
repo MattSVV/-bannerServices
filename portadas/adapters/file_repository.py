@@ -19,8 +19,15 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>. #
 ##########################################################################
 """
-``CoverRepository`` on the file system: ``<root>/<id>.png`` and ``<root>/<id>.json`` per cover.
+``CoverRepository`` on the file system: ``<root>/<id>.json`` and a PNG per cover.
 
+* every save writes the image under a NEW name, ``<id>.<version>.png`` (the version is a hex number that only grows),
+  and records it in the JSON (``"image"``). OpenLP's display loads images by file URL and may serve a cached picture
+  for a URL it has seen, so a re-rendered cover must never reuse a path. Covers saved before this layout have
+  ``<id>.png`` and no ``"image"``; they keep working, and their next save migrates them;
+* the newest ``KEPT_IMAGE_VERSIONS`` images stay (service items already in the order point at them); older ones are
+  deleted after a save, and a delete that fails (on Windows a file in use) is logged and retried by the next save;
+* the recorded name is validated against a strict pattern before it touches a path, like ids;
 * ids are validated against a strict pattern before they touch a path, so ``..``, separators, NUL bytes and absolute
   paths cannot reach outside ``root``;
 * writes go to a temporary file in the same folder and are moved into place with ``os.replace``; a failed save
@@ -31,15 +38,18 @@
 * unreadable entries are skipped by ``list`` with a logged warning;
 * messages in exceptions are safe to show to the user (no paths); details go to the log.
 """
+import json
 import logging
 import os
 import re
 import stat
+import time
 import uuid
 from pathlib import Path
 
 from ..application.cover_mapper import CoverDataError, cover_from_json, cover_to_json
 from ..application.ports import (
+    KEPT_IMAGE_VERSIONS,
     CoverCorrupt,
     CoverNotFound,
     CoverRepository,
@@ -56,10 +66,20 @@ MAX_PNG_BYTES = 50 * 1024 * 1024
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
 _ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
+_VERSION = re.compile(r'[0-9a-f]{1,32}')
 # Windows refuses these file names (with any extension), so they are never valid ids.
 _RESERVED = {'con', 'prn', 'aux', 'nul'} | {f'com{n}' for n in range(1, 10)} | {f'lpt{n}' for n in range(1, 10)}
 _NO_FOLLOW = getattr(os, 'O_NOFOLLOW', 0)
 _NO_BLOCK = getattr(os, 'O_NONBLOCK', 0)  # opening a FIFO for reading would otherwise wait for a writer
+
+
+def _version_of(cover_id, name):
+    """The version number inside ``<cover_id>.<hex>.png``; ``None`` for any other name (ids never contain a dot)."""
+    prefix = f'{cover_id}.'
+    if not isinstance(name, str) or not name.startswith(prefix) or not name.endswith('.png'):
+        return None
+    token = name[len(prefix):-len('.png')]
+    return int(token, 16) if _VERSION.fullmatch(token) else None
 
 
 def _check_id(cover_id):
@@ -125,35 +145,64 @@ class FileCoverRepository(CoverRepository):
     def _json(self, cover_id):
         return self.root / f'{_check_id(cover_id)}.json'
 
-    def _png(self, cover_id):
+    def _legacy_png(self, cover_id):
         return self.root / f'{_check_id(cover_id)}.png'
+
+    def _png(self, cover_id):
+        """The current image: the file name recorded in the JSON, or the legacy ``<id>.png`` without one."""
+        name = self._recorded_image(cover_id)
+        return self.root / name if name else self._legacy_png(cover_id)
+
+    def _recorded_image(self, cover_id):
+        """The validated image name stored in the JSON; ``None`` when absent, unreadable or not one we generate."""
+        try:
+            name = json.loads(_read_regular(self._json(cover_id), MAX_JSON_BYTES).decode('utf-8')).get('image')
+        except (OSError, ValueError, AttributeError, RecursionError):
+            return None
+        if isinstance(name, str) and _version_of(cover_id, name) is not None:
+            return name
+        return None
+
+    def _versions(self, cover_id):
+        """``[(version, path)]`` of a cover's images, oldest first; the legacy ``<id>.png`` counts as version -1."""
+        found = []
+        if self.root.is_dir():
+            for path in self.root.iterdir():
+                version = _version_of(cover_id, path.name)
+                if version is not None and _is_regular(path):
+                    found.append((version, path))
+        legacy = self._legacy_png(cover_id)
+        if _is_regular(legacy):
+            found.append((-1, legacy))
+        return sorted(found)
 
     def save(self, cover, png_bytes):
         if not isinstance(cover, Cover):
             raise RepositoryError('Only covers can be saved.')
-        json_path, png_path = self._json(cover.id), self._png(cover.id)
+        json_path = self._json(cover.id)
         if not isinstance(png_bytes, bytes) or not png_bytes.startswith(PNG_SIGNATURE):
             raise RepositoryError('The image is not a PNG.')
         if len(png_bytes) > MAX_PNG_BYTES:
             raise RepositoryError('The image is too large.')
-        previous_png = None
         staged = []
+        png_path = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            if _is_regular(png_path):  # also an orphan image without JSON: a failed save must give it back
-                previous_png = _read_regular(png_path, MAX_PNG_BYTES)
+            newest = max((version for version, _ in self._versions(cover.id)), default=-1)
+            version = max(time.time_ns(), newest + 1)  # only grows, even when the clock steps back
+            png_path = self.root / f'{cover.id}.{version:x}.png'
             png_written = False
             try:
                 staged.append(_stage(png_path, png_bytes))
-                staged.append(_stage(json_path, cover_to_json(cover).encode('utf-8')))
+                staged.append(_stage(json_path, cover_to_json(cover, image=png_path.name).encode('utf-8')))
                 os.replace(staged[0], png_path)
                 png_written = True
                 os.replace(staged[1], json_path)  # the commit marker
             except BaseException:
                 for temp in staged:
                     temp.unlink(missing_ok=True)
-                if png_written:
-                    self._restore_png(png_path, previous_png)
+                if png_written:  # the previous image was never touched: only the new one has to go
+                    self._discard(png_path)
                 raise
         except OSError as error:
             log.warning('Could not save cover "%s": %s', cover.id, error)
@@ -162,16 +211,29 @@ class FileCoverRepository(CoverRepository):
             log.warning('Could not save cover "%s": its text cannot be encoded.', cover.id)
             raise RepositoryError('The cover could not be saved: it contains a character that cannot be stored.'
                                   ) from None
+        self._prune(cover.id, png_path)
 
     @staticmethod
-    def _restore_png(png_path, previous_png):
+    def _discard(path):
         try:
-            if previous_png is None:
-                png_path.unlink(missing_ok=True)
-            else:
-                _atomic_write(png_path, previous_png)
+            path.unlink(missing_ok=True)
         except OSError:
-            log.exception('Could not roll back %s after a failed save', png_path.name)
+            log.exception('Could not remove %s after a failed save', path.name)
+
+    def _prune(self, cover_id, current):
+        """Delete the images older than the newest few. A failure is logged and retried by the next save."""
+        try:
+            versions = self._versions(cover_id)
+        except OSError as error:
+            log.warning('Could not prune the old images of cover "%s": %s', cover_id, error)
+            return
+        for _, path in versions[:-KEPT_IMAGE_VERSIONS]:
+            if path == current:
+                continue
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as error:  # on Windows the file may still be open in the display
+                log.warning('Could not prune the old image %s of cover "%s": %s', path.name, cover_id, error)
 
     def get(self, cover_id):
         json_path = self._json(cover_id)
@@ -212,15 +274,28 @@ class FileCoverRepository(CoverRepository):
         return covers
 
     def delete(self, cover_id):
-        json_path, png_path = self._json(cover_id), self._png(cover_id)
-        if not os.path.lexists(json_path) and not os.path.lexists(png_path):
-            raise CoverNotFound(f'There is no cover "{cover_id}".')
+        json_path = self._json(cover_id)
         try:
-            json_path.unlink(missing_ok=True)  # first, so a half-finished delete never lists a cover without image
-            png_path.unlink(missing_ok=True)
+            versions = self._versions(cover_id)
         except OSError as error:
             log.warning('Could not delete cover "%s": %s', cover_id, error)
             raise RepositoryError(f'The cover could not be deleted: {_reason(error)}.') from error
+        if not os.path.lexists(json_path) and not versions:
+            raise CoverNotFound(f'There is no cover "{cover_id}".')
+        failure = None
+        try:
+            json_path.unlink(missing_ok=True)  # first, so a half-finished delete never lists a cover without image
+        except OSError as error:
+            failure = error
+        else:
+            for _, path in versions:  # every version, so none is left behind; the first failure is reported
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as error:
+                    failure = failure or error
+        if failure is not None:
+            log.warning('Could not delete cover "%s": %s', cover_id, failure)
+            raise RepositoryError(f'The cover could not be deleted: {_reason(failure)}.') from failure
 
     def png_path(self, cover_id):
         path = self._png(cover_id)

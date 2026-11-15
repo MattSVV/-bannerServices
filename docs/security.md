@@ -245,6 +245,25 @@ needs a Windows run.
   background after sanitizing; the same pages, unsanitized, must draw something (control, so the harness is known to see
   the attack); the built-in templates must look identical before and after sanitizing.
 
+## Cover storage and image file names
+
+`FileCoverRepository` stores `<id>.json` and a PNG per cover. Ids are validated before they touch a path
+(`[A-Za-z0-9_-]{1,64}`, no Windows reserved names).
+
+- **A new image file per save.** The PNG is named `<id>.<version>.png`, where the version is a hex number that only
+  grows (`max(time_ns, newest + 1)`), and the name is recorded in the JSON (`image`). OpenLP's display loads images by
+  file URL and can serve a cached picture for a URL it has seen, so rewriting the same path left the Preview and Live
+  screens on the old image. Thumbnails use the same names.
+- **The recorded name is never trusted.** It must match `<id>.<hex>.png` for that very cover (ids contain no dot, so
+  one cover's pattern cannot match another cover's files); anything else is ignored, as if there were no record, and the
+  legacy `<id>.png` is used. No other path is ever built from JSON.
+- **Atomicity is unchanged.** The new PNG and the JSON are staged as temporary files and moved with `os.replace`, the JSON
+  last (the commit marker). The previous image is never touched, so a failed save only removes the new file.
+- **Old versions.** The newest three images stay so service items already in the order still load; older ones (and
+  the legacy `<id>.png`) are deleted after a save. A delete that fails (on Windows, a file in use) is logged and retried
+  by the next save; it never fails the save. Deleting a cover removes every version. Covers saved by older releases
+  keep working and are migrated by their next save.
+
 ## T15 security review (2026-10-17)
 
 An independent read-only review of `efa6e78` found no CRITICAL or HIGH issue, 3 MEDIUM and 4 LOW (details in

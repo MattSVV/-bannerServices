@@ -34,7 +34,7 @@ def test_the_list_shows_saved_covers_newest_first_with_thumbnails(item):
     row = item.list_view.item(0)
     assert row.data(QtCore.Qt.UserRole) == 'two'
     assert not row.icon().isNull()
-    assert (item.services.thumbnail_dir / 'two.png').exists()
+    assert (item.services.thumbnail_dir / item.services.repository.png_path('two').name).exists()
 
 
 def test_an_empty_library_shows_an_empty_list(qtbot, openlp_env, tmp_path):
@@ -48,7 +48,7 @@ def test_an_empty_library_shows_an_empty_list(qtbot, openlp_env, tmp_path):
 
 
 def test_a_cover_whose_image_is_missing_is_still_listed_without_a_thumbnail(item, services):
-    (services.repository.png_dir / 'two.png').unlink()
+    services.repository.png_path('two').unlink()
 
     item.load_list()
 
@@ -137,7 +137,7 @@ def test_edit_of_a_vanished_cover_reports_an_error(item, services):
 
 
 def test_an_edit_refreshes_the_thumbnail(item, services):
-    old_thumbnail = services.thumbnail_dir / 'two.png'
+    old_thumbnail = services.thumbnail_dir / services.repository.png_path('two').name
     assert old_thumbnail.exists()
     select(item, 0)
     item.form = FakeForm(save_as=services.repository.get('two'))
@@ -145,8 +145,23 @@ def test_an_edit_refreshes_the_thumbnail(item, services):
 
     item.on_edit_click()
 
-    assert (services.thumbnail_dir / 'two.png').exists()
+    new_thumbnail = services.thumbnail_dir / services.repository.png_path('two').name
+    assert new_thumbnail != old_thumbnail  # a new name, so no Qt or display cache key repeats
+    assert new_thumbnail.exists()
     assert not item.list_view.item(0).icon().isNull()
+
+
+def test_old_thumbnail_versions_are_pruned_to_the_newest_few(item, services):
+    select(item, 0)
+    item.form = FakeForm(save_as=services.repository.get('two'))
+    for number in range(6):
+        services.repository.save(services.repository.get('two'), png_bytes(8, 8, bytes([number, 0, 0])))
+        item.on_edit_click()
+
+    thumbnails = sorted(services.thumbnail_dir.glob('two.*.png'))
+
+    assert len(thumbnails) == 3
+    assert services.thumbnail_dir / services.repository.png_path('two').name in thumbnails
 
 
 # --- delete ----------------------------------------------------------------------------------------------------------
@@ -159,7 +174,7 @@ def test_delete_asks_for_confirmation_and_calls_the_repository(item, services):
     assert item.confirm_asked == 2
     assert sorted(services.repository.deleted) == ['one', 'two']
     assert titles(item) == ['Esperanza viva']
-    assert not (services.thumbnail_dir / 'two.png').exists()
+    assert list(services.thumbnail_dir.glob('two*.png')) == []
 
 
 def test_delete_declined_deletes_nothing(item, services):
@@ -199,7 +214,7 @@ def test_export_copies_the_png_through_the_repository(item, services, tmp_path):
 
     assert item.suggested_name == 'Fe.png'
     assert services.repository.exported == [('two', item.export_path, False)]
-    assert item.export_path.read_bytes() == (services.repository.png_dir / 'two.png').read_bytes()
+    assert item.export_path.read_bytes() == services.repository.png_path('two').read_bytes()
 
 
 def test_export_to_an_existing_file_overwrites_because_the_dialog_confirmed(item, services, tmp_path):

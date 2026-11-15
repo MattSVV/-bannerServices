@@ -89,12 +89,16 @@ class InMemoryRepository(CoverRepository):
         self.png_dir = Path(png_dir)
         self.png_dir.mkdir(parents=True, exist_ok=True)
         self.covers = {}
+        self.current = {}
+        self.versions = 0
         self.deleted = []
         self.exported = []
 
     def save(self, cover, png):
         self.covers[cover.id] = cover
-        (self.png_dir / f'{cover.id}.png').write_bytes(png)
+        self.versions += 1  # a new file name per save, like the real repository
+        self.current[cover.id] = self.png_dir / f'{cover.id}.{self.versions:x}.png'
+        self.current[cover.id].write_bytes(png)
 
     def get(self, cover_id):
         try:
@@ -118,8 +122,8 @@ class InMemoryRepository(CoverRepository):
         self.exported.append((cover_id, Path(dest_path), overwrite))
 
     def png_path(self, cover_id):
-        path = self.png_dir / f'{cover_id}.png'
-        if cover_id not in self.covers or not path.exists():
+        path = self.current.get(cover_id)
+        if cover_id not in self.covers or path is None or not path.exists():
             raise CoverNotFound(f'There is no image for cover "{cover_id}".')
         return path
 
