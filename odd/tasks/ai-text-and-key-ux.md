@@ -85,4 +85,9 @@ This revises the invariant "the AI never writes the cover text" from `odd/tasks/
 Owner decision (2026-11-15): fix L1-L3, then release v0.2.0 (merge to `main`, tag, GitHub release with zip and checksum).
 
 - [x] A4 (fix verifier lows L1-L3) — route: delegated direct writer
-- [ ] R1 (release v0.2.0: version bump, changelog, install doc, merge to main, tag, GitHub release) — route: inline, orchestrator Owner decides push and PR. Note: `test_t15b_hardening::test_many_distinct_css_problems_cost_linear_time_and_fail_closed` is timing-sensitive (2.0 s) and flaked under `--cov` in two earlier full runs, also on the untouched base.
+- [ ] R1 (release v0.2.0: version bump, changelog, install doc, merge to main, tag, GitHub release) — route: inline, orchestrator. Done up to the tag (`bd7cc50`, `v0.2.0` pushed); the GitHub release is blocked because the active `gh` account has no push permission on the repo (owner to log in as the repo owner or upload by hand).
+- [x] B1 (bug, church PC 2026-11-15): after editing a saved cover, OpenLP's slide thumbnails show the new image but the Preview and Live **screens** keep the old one. Cause (from exploration): the PNG is rewritten at the same path `<id>.png`, and OpenLP's QtWebEngine display loads it by file URI (`openlp/core/display/window.py:402`), so the engine serves the cached image for the same URL. Fix: a new file name per render, old versions kept so service items already in the order keep working, pruned to a small number per cover and removed when the cover is deleted. Route: delegated direct writer. Owner decides push and PR. Note: `test_t15b_hardening::test_many_distinct_css_problems_cost_linear_time_and_fail_closed` is timing-sensitive (2.0 s) and flaked under `--cov` in two earlier full runs, also on the untouched base.
+
+| Task | Commit | RED / GREEN | Gate | Route |
+|------|--------|-------------|------|-------|
+| B1 | `4c998f3` | RED: 16 repository tests and 5 media item / service tests failed before the change; GREEN: 1535 passed | `scripts/check.sh`: ruff clean, coverage 97.5%; only the known timing flake failed, passes alone | delegated direct writer |
