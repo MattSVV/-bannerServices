@@ -67,7 +67,22 @@ This revises the invariant "the AI never writes the cover text" from `odd/tasks/
 | A1 | done | 6196f75 | RED: new scroll-area test failed (no `form_scroll_area`). GREEN: tests/test_edit_form.py 32 passed. Gate: 1455 passed, coverage 97.45%; the only failure is `test_t15b_hardening::test_many_distinct_css_problems_cost_linear_time_and_fail_closed` (2.0 s timing assert), which also fails on the untouched base under `--cov` in the full run and passes alone (environmental, pre-existing). Route: delegated direct writer. |
 | A2 | done | c13b492 | RED: 12 new/changed settings-tab tests failed (no `save_key_button`/`show_key_button`, OK still stored a typed key). GREEN: test_settings_tab + test_key_origin + test_i18n 94 passed. Gate: 1465 passed, coverage 97.45%; same single pre-existing timing failure as A1. Route: delegated direct writer. |
 | A3 | done | 77a7675 | RED: new prompt, parse/use-case and editor tests failed at collection (no `application/design_text`). GREEN: 103 + 36 targeted tests passed. Gate: `scripts/check.sh` fully passed, 1510 passed, coverage 97.51% (the t15b timing test passed this run). Route: delegated direct writer. |
+| A4 | done | 50721c1 | RED: 5 new tests failed (typed-key Test connection not registered, OK did not cancel a running Save key test, field cleared after a different typed key, repair prompt without `suggested_text`). GREEN: settings tab, design parse/use-case and design prompt tests 138 passed except `test_defaults_are_loaded`, which fails when run alone on the base too and passes in the full run. Gate: `scripts/check.sh` 1515 passed, coverage 97.52%, one failure: the known t15b timing test, which passes alone (0.70 s). L3 cancel path: OpenLP `reject()` calls `cancel()`, which calls `load()`, which already cancels the test (now pinned by a test). Route: delegated direct writer. |
+
+## Verification
+
+- Review assessment (`gentle-ai review assess`, RDD off): **high** (security doc and editor process signals, 1067 changed lines), so an independent verifier ran.
+- Orchestrator spot check: `scripts/check.sh` 1509 passed, 1 failed (the timing test below; passes alone in 0.65 s), coverage 97.51%.
+- Independent verifier (read-only): no high or medium findings; 258 focused tests passed. Low findings, open:
+  - L1: Test connection with a typed key does not `register_secret` (Save key does), so a provider error echoing the key in an unrecognised form could reach the result label.
+  - L2: the repair-round prompt (`outcome.raw`) omits `suggested_text`, so a repaired design may arrive without suggested text (safe failure).
+  - L3: OK while a Save key test runs does not cancel it; the tested key may still be stored after the dialog closes.
+  - Info: a successful save clears the field even if a new key was typed meanwhile; a suggestion computed for old verses still applies if verses changed mid-design.
+- `test_settings_tab.py::test_defaults_are_loaded` fails when run in isolation on `main` too (machine settings dependent, unconfirmed).
 
 ## Next step
 
-All tasks done on the branch. Owner decides push and PR. Note: `test_t15b_hardening::test_many_distinct_css_problems_cost_linear_time_and_fail_closed` is timing-sensitive (2.0 s) and flaked under `--cov` in two earlier full runs, also on the untouched base.
+Owner decision (2026-11-15): fix L1-L3, then release v0.2.0 (merge to `main`, tag, GitHub release with zip and checksum).
+
+- [x] A4 (fix verifier lows L1-L3) — route: delegated direct writer
+- [ ] R1 (release v0.2.0: version bump, changelog, install doc, merge to main, tag, GitHub release) — route: inline, orchestrator Owner decides push and PR. Note: `test_t15b_hardening::test_many_distinct_css_problems_cost_linear_time_and_fail_closed` is timing-sensitive (2.0 s) and flaked under `--cov` in two earlier full runs, also on the untouched base.
