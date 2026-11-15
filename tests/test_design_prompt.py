@@ -174,3 +174,66 @@ def test_the_previous_answer_cannot_rebuild_a_block_delimiter():
     body = prompt.split('<<<PREVIOUS_ANSWER\n', 1)[1].split('\nPREVIOUS_ANSWER>>>', 1)[0]
 
     assert '<<<' not in body and '>>>' not in body
+
+
+# --- suggested text (only when the user gave nothing but Bible references) --------------------------------------------
+
+from contrib.plugins.portadas.application.design_text import STAND_IN_TITLE, wants_text_suggestion  # noqa: E402
+from contrib.plugins.portadas.domain.cover import MAX_SUBTITLE, MAX_TITLE  # noqa: E402
+
+
+@pytest.mark.parametrize('fields, expected', [
+    (dict(key_verse='Santiago 4:7'), True),
+    (dict(readings=['Efesios 6:11-12']), True),
+    (dict(key_verse='  ', readings=['', 'Juan 3:16']), True),
+    (dict(), False),
+    (dict(key_verse='Santiago 4:7', title_main='Resistir'), False),
+    (dict(key_verse='Santiago 4:7', title_accent='al diablo'), False),
+    (dict(readings=['Juan 3:16'], subtitle='Una serie'), False),
+    (dict(title_main='  ', title_accent=' ', subtitle='\n', readings=['']), False),
+])
+def test_text_is_suggested_only_with_no_text_and_at_least_one_reference(fields, expected):
+    values = dict(title_main='', title_accent='', subtitle='', key_verse='', readings=[])
+    values.update(fields)
+
+    assert wants_text_suggestion(**values) is expected
+
+
+def suggest_cover(**fields):
+    return cover(title_main=STAND_IN_TITLE, title_accent=None, subtitle=None, **fields)
+
+
+def test_the_default_prompts_never_ask_for_text():
+    system = build_system_prompt()
+    user = build_user_prompt(cover(), 'warm')
+
+    assert 'You never write the text itself' in system
+    assert 'suggested_text' not in system and 'suggested_text' not in user
+
+
+def test_the_suggest_prompt_asks_for_plain_text_within_the_domain_limits():
+    system = build_system_prompt(suggest_text=True)
+
+    assert 'suggested_text' in system and 'title_main' in system
+    assert f'{MAX_TITLE} characters' in system and f'{MAX_SUBTITLE} characters' in system
+    assert 'language of the references' in system
+    assert 'no HTML' in system
+    # The template rules do not change: no literal visible text in the template.
+    assert 'no visible literal text' in system and 'You never write the text itself' not in system
+    assert 'only in the "suggested_text" field' in system
+
+
+def test_the_suggest_user_prompt_hides_the_stand_in_title_and_keeps_the_references():
+    user = build_user_prompt(suggest_cover(), 'warm', suggest_text=True)
+
+    assert STAND_IN_TITLE not in user
+    assert 'title_main (0 characters): (empty)' in user
+    assert 'Santiago 4:7' in user and 'Efesios 6:11-12' in user
+    assert 'suggest' in user.lower()
+
+
+def test_build_request_passes_the_mode_to_both_prompts():
+    request = build_request(suggest_cover(), 'warm', suggest_text=True)
+
+    assert 'suggested_text' in request.system_prompt and 'suggest' in request.user_prompt.lower()
+    assert 'suggested_text' not in build_request(cover(), 'warm').system_prompt

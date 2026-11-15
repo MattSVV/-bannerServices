@@ -20,6 +20,7 @@
 import threading
 
 import pytest
+from contrib.plugins.portadas.application.design_text import STAND_IN_TITLE
 from contrib.plugins.portadas.application.ports import CoverDesigner, DesignError, DesignProposal
 from contrib.plugins.portadas.domain.cover import IconKind
 
@@ -193,6 +194,7 @@ def test_without_a_designer_factory_the_mode_explains_itself(form, services):
 
 def test_an_invalid_cover_is_not_sent_to_the_provider(form, designer):
     form.title_main_edit.setText('')
+    form.key_verse_edit.setText('')  # a title-less cover with a reference would be a suggest-mode design
 
     form.on_design()
 
@@ -339,3 +341,155 @@ def test_a_manual_icon_choice_after_the_design_is_not_overwritten_by_going_back(
     form.use_template_button.click()
 
     assert form.icon() == chosen
+
+
+# --- suggested text: only when every text field is empty and at least one reference is present ----------------------
+
+SUGGESTED = {'title_main': 'Firmes ante la prueba', 'title_accent': 'con fe', 'subtitle': 'Una serie sobre firmeza'}
+
+
+@pytest.fixture
+def verses_form(form):
+    form.title_main_edit.setText('')
+    form.key_verse_edit.setText('')
+    form.readings_edit.setPlainText('Efesios 6:11-12')
+    return form
+
+
+def suggesting(designer, suggested=SUGGESTED):
+    designer.proposal = DesignProposal(GOOD_HTML, GOOD_SVG, 'warm', suggested)
+
+
+def test_with_only_readings_the_request_asks_for_text_and_the_fields_are_filled(verses_form, qtbot, designer,
+                                                                                services):
+    suggesting(designer)
+
+    start_design(verses_form, qtbot, designer)
+    finish_design(verses_form, qtbot, designer)
+
+    assert 'suggested_text' in designer.requests[0].system_prompt
+    assert verses_form.title_main_edit.text() == 'Firmes ante la prueba'
+    assert verses_form.title_accent_edit.text() == 'con fe'
+    assert verses_form.subtitle_edit.toPlainText() == 'Una serie sobre firmeza'
+    assert verses_form.readings_edit.toPlainText() == 'Efesios 6:11-12'  # the references stay as typed
+    assert 'suggested' in verses_form.ai_note_label.text() and not verses_form.ai_note_label.isHidden()
+    qtbot.waitUntil(lambda: bool(services.renderer.pending) or verses_form._preview_dirty, timeout=2000)  # refreshed
+    assert verses_form.values()['custom_template_html']
+
+
+def test_with_only_a_key_verse_the_request_asks_for_text_too(verses_form, qtbot, designer):
+    verses_form.readings_edit.setPlainText('')
+    verses_form.key_verse_edit.setText('Santiago 4:7')
+    suggesting(designer)
+
+    start_design(verses_form, qtbot, designer)
+    finish_design(verses_form, qtbot, designer)
+
+    assert 'suggested_text' in designer.requests[0].system_prompt
+    assert verses_form.title_main_edit.text() == 'Firmes ante la prueba'
+
+
+def test_the_stand_in_title_never_reaches_the_ai_or_the_fields(verses_form, qtbot, designer):
+    suggesting(designer)
+
+    start_design(verses_form, qtbot, designer)
+    finish_design(verses_form, qtbot, designer)
+
+    assert STAND_IN_TITLE not in designer.requests[0].user_prompt
+    assert STAND_IN_TITLE not in verses_form.title_main_edit.text()
+
+
+def test_with_a_main_title_written_the_request_asks_for_no_text_and_the_fields_are_unchanged(verses_form, qtbot,
+                                                                                              designer):
+    verses_form.title_main_edit.setText('Mi título')
+    suggesting(designer)  # a reply that suggests text anyway must be ignored
+
+    start_design(verses_form, qtbot, designer)
+    finish_design(verses_form, qtbot, designer)
+
+    assert 'suggested_text' not in designer.requests[0].system_prompt
+    assert verses_form.title_main_edit.text() == 'Mi título'
+    assert verses_form.title_accent_edit.text() == '' and verses_form.subtitle_edit.toPlainText() == ''
+    assert 'exactly what you typed' in verses_form.ai_note_label.text()
+
+
+@pytest.mark.parametrize('field', ['title_accent_edit', 'subtitle_edit'])
+def test_other_text_without_a_main_title_is_not_suggest_mode_and_designing_is_refused(verses_form, designer, field):
+    widget = getattr(verses_form, field)
+    widget.setText('Mi texto') if hasattr(widget, 'setText') else widget.setPlainText('Mi texto')
+    suggesting(designer)
+
+    verses_form.on_design()
+
+    assert designer.requests == [] and verses_form._design_job is None
+    assert verses_form.status_label.text()
+    assert verses_form.title_main_edit.text() == ''
+
+
+def test_designing_without_a_main_title_and_without_references_is_still_refused(form, designer):
+    form.title_main_edit.setText('')
+    form.key_verse_edit.setText('')
+    form.readings_edit.setPlainText('')
+
+    form.on_design()
+
+    assert designer.requests == [] and form._design_job is None
+    assert form.status_label.text()
+
+
+def test_text_typed_while_the_ai_works_is_never_overwritten(verses_form, qtbot, designer):
+    suggesting(designer)
+    start_design(verses_form, qtbot, designer)
+
+    verses_form.title_main_edit.setText('Lo que escribí')
+    finish_design(verses_form, qtbot, designer)
+
+    assert verses_form.title_main_edit.text() == 'Lo que escribí'
+    assert verses_form.title_accent_edit.text() == '' and verses_form.subtitle_edit.toPlainText() == ''
+    assert verses_form.values()['custom_template_html']  # the design itself still applies
+
+
+def test_an_invalid_suggestion_is_rejected_with_a_message_and_the_design_applies(verses_form, qtbot, designer):
+    suggesting(designer, {'title_main': '<b>Marca</b>', 'subtitle': 'ok'})
+
+    start_design(verses_form, qtbot, designer)
+    finish_design(verses_form, qtbot, designer)
+
+    assert verses_form.title_main_edit.text() == '' and verses_form.subtitle_edit.toPlainText() == ''
+    assert 'rejected' in verses_form.ai_note_label.text()
+    assert verses_form.values()['custom_template_html']
+
+
+def test_saving_still_requires_a_main_title_after_a_rejected_suggestion(verses_form, qtbot, designer):
+    suggesting(designer, None)
+    start_design(verses_form, qtbot, designer)
+    finish_design(verses_form, qtbot, designer)
+
+    verses_form.on_save()
+
+    assert verses_form.saved_cover is None and verses_form.errors
+
+
+def test_the_suggested_text_can_be_edited_and_saved(verses_form, qtbot, designer):
+    suggesting(designer)
+    start_design(verses_form, qtbot, designer)
+    finish_design(verses_form, qtbot, designer)
+    verses_form.title_main_edit.setText('Firmes')
+    verses_form.preview_timer.stop()
+    verses_form._busy = False
+
+    verses_form.on_save()
+
+    assert verses_form.saved_cover is not None and verses_form.saved_cover.title_main == 'Firmes'
+    assert verses_form.saved_cover.title_accent == 'con fe'
+
+
+def test_the_data_use_notice_says_that_the_ai_may_write_suggested_text(form, monkeypatch):
+    from contrib.plugins.portadas.lib import editform
+    from contrib.plugins.portadas.lib.editform import CoverEditForm
+    messages = []
+    monkeypatch.setattr(editform, 'message_box', lambda parent, icon, title, text, *args: messages.append(text) or 0)
+
+    CoverEditForm.confirm_data_use(form, 'OpenAI')
+
+    assert 'only Bible references' in messages[0] and 'suggested' in messages[0] and 'edit' in messages[0]

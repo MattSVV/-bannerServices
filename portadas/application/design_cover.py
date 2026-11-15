@@ -28,6 +28,7 @@ from ..security.html_policy import sanitize_svg, sanitize_template
 from .create_cover import CUSTOM_REQUIRED
 from .design_parse import parse_design_reply
 from .design_prompt import build_repair_prompt, build_request
+from .design_text import SuggestionRejected, check_suggested_text
 from .ports import DesignError, DesignProposal, DesignRequest, UnusableReply
 
 _EMPTY_SVG = re.compile(r'<svg[^>]*>\s*</svg>')
@@ -42,11 +43,15 @@ class DesignedCover:
     :param icon: an inline-SVG ``IconRef``, or ``None`` when the AI drew none (or its drawing was unusable).
     :param notes: the AI's short remark.
     :param repaired: True when the first answer was rejected and the repair round produced this one.
+    :param suggested_text: validated ``SuggestedText`` (suggest mode only), or ``None``.
+    :param suggestion_problem: why the suggested text was unusable (suggest mode only), else ``''``.
     """
     template_html: str
     icon: IconRef = None
     notes: str = ''
     repaired: bool = False
+    suggested_text: object = None
+    suggestion_problem: str = ''
 
     def apply_to(self, cover):
         """Return ``cover`` with this design: its custom template and, when the AI drew one, its icon."""
@@ -64,18 +69,20 @@ class DesignCoverWithAI:
     def __init__(self, designer):
         self.designer = designer
 
-    def design(self, cover, style_hint=None):
+    def design(self, cover, style_hint=None, suggest_text=False):
         """
-        :returns: a ``DesignedCover``.
+        :param suggest_text: ask the AI to also suggest the cover text (see ``design_text.wants_text_suggestion``).
+            Without it any text in the reply is ignored.
+        :returns: a ``DesignedCover``. A bad suggestion never fails the design: see ``suggestion_problem``.
         :raises DesignError: when the provider fails, or the template is still rejected after one repair round.
         """
-        request = build_request(cover, style_hint)
-        outcome = self._attempt(request)
+        request = build_request(cover, style_hint, suggest_text)
+        outcome = self._attempt(request, suggest_text)
         if outcome.template is not None and outcome.icon_ok:
             return outcome.result(repaired=False)
         repair = DesignRequest(request.system_prompt, build_repair_prompt(
             request.user_prompt, outcome.raw, outcome.problems))
-        second = self._attempt(repair)
+        second = self._attempt(repair, suggest_text)
         if second.template is None and outcome.template is not None:
             return outcome.result(repaired=False)  # only the icon was bad: a failed repair must not lose the template
         if second.template is None:
@@ -84,14 +91,14 @@ class DesignCoverWithAI:
                               'Try again or change the style hint.')
         return second.result(repaired=True)  # an icon that is still unusable is dropped, the template is kept
 
-    def _attempt(self, request):
+    def _attempt(self, request, suggest_text):
         try:
             reply = self.designer.design(request)
         except UnusableReply as error:
             return _Outcome(str(error), None, None, False, '', [str(error)])
         if not isinstance(reply, DesignProposal):
             raise DesignError('The AI provider returned an unusable answer.')
-        return _Outcome.of(reply)
+        return _Outcome.of(reply, suggest_text)
 
     @staticmethod
     def parse(text):
@@ -102,12 +109,13 @@ class DesignCoverWithAI:
 class _Outcome:
     """The sanitised parts of one proposal and the problems found."""
 
-    def __init__(self, raw, template, icon, icon_ok, notes, problems):
+    def __init__(self, raw, template, icon, icon_ok, notes, problems, suggestion=None, suggestion_problem=''):
         self.raw, self.template, self.icon, self.icon_ok, self.notes, self.problems = (
             raw, template, icon, icon_ok, notes, problems)
+        self.suggestion, self.suggestion_problem = suggestion, suggestion_problem
 
     @classmethod
-    def of(cls, proposal):
+    def of(cls, proposal, suggest_text=False):
         problems = []
         result = sanitize_template(proposal.template_html, CUSTOM_REQUIRED)
         template = result.html if result.accepted else None
@@ -125,7 +133,15 @@ class _Outcome:
                 icon_ok = False
                 problems += ['icon_svg: ' + violation.message for violation in svg.violations if violation.fatal]
         raw = f'{{"html": {proposal.template_html!r}, "icon_svg": {proposal.icon_svg!r}}}'
-        return cls(raw, template, icon, icon_ok, proposal.notes, problems or ['the answer was unusable'])
+        suggestion, suggestion_problem = None, ''
+        if suggest_text:
+            try:
+                suggestion = check_suggested_text(proposal.suggested_text)
+            except SuggestionRejected as error:
+                suggestion_problem = str(error)
+        return cls(raw, template, icon, icon_ok, proposal.notes, problems or ['the answer was unusable'],
+                   suggestion, suggestion_problem)
 
     def result(self, repaired):
-        return DesignedCover(self.template, self.icon, self.notes, repaired)
+        return DesignedCover(self.template, self.icon, self.notes, repaired, self.suggestion,
+                             self.suggestion_problem)

@@ -38,7 +38,7 @@ From OpenLP, the user fills in the sermon data, picks a template (or asks the AI
 | Mode | How it works |
 |------|--------------|
 | Templates | Built-in HTML/CSS templates. Deterministic, free, and offline. |
-| AI (bring your own key) | The user configures a provider (OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible endpoint) with their own API key. The AI creates a brand-new template with creative freedom (layout, colors, typography, decorative SVG), within the sanitizer rules. The text is always injected by our code, escaped; the AI never writes it. |
+| AI (bring your own key) | The user configures a provider (OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible endpoint) with their own API key. The AI creates a brand-new template with creative freedom (layout, colors, typography, decorative SVG), within the sanitizer rules. The text is always injected by our code, escaped. The AI writes no text, with one exception: if you enter only Bible references, it also suggests a title and subtitle (see below). |
 
 ### Configuring AI
 
@@ -46,7 +46,9 @@ Open **Settings > Configure OpenLP > Covers**. Pick a provider, optionally type 
 
 ### Designing a cover with AI
 
-In the cover editor, type the cover text as usual, optionally describe the style you want (up to 300 characters, for example "warm colours, stained glass"), and click **Design with AI**. The request runs in the background: the button is disabled, the status line says the AI is working, and **Cancel design** stops waiting (the request ends at its next checkpoint and its answer is discarded). When the design arrives, the preview redraws with it, and a note tells you the cover now uses an AI-designed template. The AI only designs the look: your text is always the one you typed. If the AI also drew an icon, it appears as "Uploaded" in the icon list.
+In the cover editor, type the cover text as usual, optionally describe the style you want (up to 300 characters, for example "warm colours, stained glass"), and click **Design with AI**. The request runs in the background: the button is disabled, the status line says the AI is working, and **Cancel design** stops waiting (the request ends at its next checkpoint and its answer is discarded). When the design arrives, the preview redraws with it, and a note tells you the cover now uses an AI-designed template. The AI designs the look and does not change your text. If the AI also drew an icon, it appears as "Uploaded" in the icon list.
+
+**Only Bible references?** Leave the main title, the highlighted title and the subtitle empty, fill the key verse and/or the readings, and click **Design with AI**. The AI then also suggests a title, an optional highlighted title and a subtitle in the language of the references, and they appear in the normal fields so you can read and edit them before saving; the status line and the note say the text came from the AI. The suggestion must be plain text within the field limits, or it is rejected with a message (the design still applies). If you wrote any of those three fields, the AI writes no text, and text you type while it works is never overwritten. Saving still needs a main title.
 
 Failures are shown on the status line without any key or provider detail: no key saved, an invalid server address, a network error, a request that took too long, or a template that was rejected as unsafe after one correction. Fix the cause in *Settings > Configure OpenLP > Covers* or try again. *Use the selected template instead* (or clicking a built-in template) goes back to a built-in template. *Save* is disabled while a design is running, and closing the editor cancels it. The AI template is stored with the cover and checked again every time it is opened.
 

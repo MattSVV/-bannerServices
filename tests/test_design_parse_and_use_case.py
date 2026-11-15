@@ -278,3 +278,93 @@ def test_the_second_fence_is_still_found_after_an_empty_one():
     text = 'intro\n```\n```\nthen\n```json\n' + reply() + '\n```\nbye'
 
     assert parse_design_reply(text).template_html == GOOD_HTML
+
+
+# --- suggested text -------------------------------------------------------------------------------------------------
+
+from contrib.plugins.portadas.application.design_text import STAND_IN_TITLE  # noqa: E402
+
+SUGGESTION = {'title_main': 'Firmes ante la prueba', 'title_accent': 'con fe', 'subtitle': 'Una serie\nsobre firmeza'}
+
+
+def suggest_reply(suggested=SUGGESTION, **extra):
+    return json.dumps({'html': GOOD_HTML, 'icon_svg': GOOD_SVG, 'notes': 'n', 'suggested_text': suggested, **extra})
+
+
+def verses_only_cover():
+    return Cover.from_raw(STAND_IN_TITLE, id='c1', key_verse='Santiago 4:7', readings=['Efesios 6:11-12'])
+
+
+def test_the_suggested_text_object_is_kept_by_the_parser_and_other_values_are_dropped():
+    assert parse_design_reply(suggest_reply()).suggested_text == SUGGESTION
+    assert parse_design_reply(suggest_reply(suggested='text')).suggested_text is None
+    assert parse_design_reply(reply()).suggested_text is None
+
+
+def test_in_suggest_mode_a_valid_suggestion_is_returned_cleaned_and_the_design_is_kept():
+    designer = FakeDesigner(suggest_reply({'title_main': '  Firmes   ante la prueba ', 'title_accent': '',
+                                           'subtitle': 'Una serie\n\nsobre firmeza'}))
+
+    designed = DesignCoverWithAI(designer).design(verses_only_cover(), None, suggest_text=True)
+
+    assert designed.suggested_text.title_main == 'Firmes ante la prueba'
+    assert designed.suggested_text.title_accent is None
+    assert designed.suggested_text.subtitle == 'Una serie\nsobre firmeza'
+    assert designed.suggestion_problem == '' and designed.template_html
+    assert 'suggested_text' in designer.requests[0].system_prompt
+
+
+def test_the_cover_keeps_the_typed_text_when_the_design_is_applied():
+    designed = DesignCoverWithAI(FakeDesigner(suggest_reply())).design(verses_only_cover(), None, suggest_text=True)
+
+    applied = designed.apply_to(verses_only_cover())
+
+    assert applied.title_main == STAND_IN_TITLE  # the editor, not the cover, decides where suggested text goes
+    assert applied.custom_template_html == designed.template_html
+
+
+def test_without_suggest_mode_any_suggested_text_is_ignored():
+    designed = DesignCoverWithAI(FakeDesigner(suggest_reply())).design(cover(), 'warm')
+
+    assert designed.suggested_text is None and designed.suggestion_problem == ''
+
+
+@pytest.mark.parametrize('suggested', [
+    {'title_main': 'x' * 81},
+    {'title_main': 'Bien', 'subtitle': 'x' * 241},
+    {'title_main': 'Bien', 'title_accent': 'y' * 81},
+    {'title_main': 'Con\x00control'},
+    {'title_main': 'Con​invisible'},
+    {'title_main': '<b>Marca</b>'},
+    {'title_main': 'Bien', 'subtitle': 'a > b'},
+    {'title_main': ''},
+    {'title_main': '   ', 'subtitle': 'Solo subtítulo'},
+    {'title_accent': 'Sin título'},
+    {'title_main': 5},
+    {'title_main': 'Bien', 'subtitle': ['no', 'texto']},
+], ids=lambda value: str(value)[:40])
+def test_an_invalid_suggestion_is_rejected_with_a_message_and_the_design_still_applies(suggested):
+    designed = DesignCoverWithAI(FakeDesigner(suggest_reply(suggested))).design(
+        verses_only_cover(), None, suggest_text=True)
+
+    assert designed.suggested_text is None
+    assert designed.suggestion_problem
+    assert designed.template_html and designed.icon is not None
+
+
+@pytest.mark.parametrize('raw', [None, 'text', ['a']])
+def test_a_missing_or_non_object_suggestion_in_suggest_mode_is_reported(raw):
+    designed = DesignCoverWithAI(FakeDesigner(suggest_reply(raw))).design(
+        verses_only_cover(), None, suggest_text=True)
+
+    assert designed.suggested_text is None and designed.suggestion_problem
+
+
+def test_the_suggestion_of_the_repair_round_is_the_one_used():
+    bad_html = GOOD_HTML.replace('{{title_main}}', 'Texto fijo')  # hard-coded text and no title placeholder
+    designer = FakeDesigner(suggest_reply({'title_main': 'Primero'}, html=bad_html), suggest_reply())
+
+    designed = DesignCoverWithAI(designer).design(verses_only_cover(), None, suggest_text=True)
+
+    assert designed.repaired and designed.suggested_text.title_main == 'Firmes ante la prueba'
+    assert 'suggested_text' in designer.requests[1].system_prompt

@@ -66,8 +66,10 @@ def parse_design_reply(text):
     if icon is not None and not isinstance(icon, str):
         raise UnusableReply('The AI reply is not valid JSON: "icon_svg" must be text or null.')
     notes = data.get('notes')
+    suggested = data.get('suggested_text')
     return DesignProposal(html, icon if icon and icon.strip() else None,
-                          notes.strip()[:MAX_NOTES] if isinstance(notes, str) else '')
+                          notes.strip()[:MAX_NOTES] if isinstance(notes, str) else '',
+                          suggested if isinstance(suggested, dict) else None)
 
 
 def _load_object(text):

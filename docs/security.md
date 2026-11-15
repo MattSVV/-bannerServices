@@ -146,7 +146,7 @@ uploaded-PNG option) before it is stored or rendered, and again on every load an
 The editor's AI mode (`lib/editform.py`, T13) adds no new capability: `lib/ai_designer.make_designer` reads the saved
 settings and the key on the GUI thread (a bad server address or an unreadable key file becomes a fixed message), the
 request runs through `lib/background.py`, and only the sanitised template and icon of `DesignedCover.apply_to` reach the
-form; the visible text always comes from the form fields. Every message shown (adapter, use case or unexpected error)
+form; the visible text always comes from the form fields, with one exception (below). Every message shown (adapter, use case or unexpected error)
 passes `redact` again, and an unexpected exception is shown by type name only. The dialog allows one design at a time,
 disables *Save* while it runs, and a closed dialog cancels the job and ignores a late callback.
 
@@ -155,6 +155,25 @@ re-sanitised when the file is read (a stored template that no longer passes is d
 falling back to its `template_id`) and again in `CreateCoverFromTemplate.compose`. There is no path involved, so there is
 no traversal surface: relative URLs resolve from the built-in folder named by `template_id` (`base_dir`), which is the
 same allowlisted root the renderer's request filter already enforces.
+
+### Suggested text (owner decision, 2026-11-15)
+
+This revises the earlier rule that the AI never writes the cover text. **Only** when the main title, the highlighted
+title and the subtitle are all empty and at least one Bible reference (key verse or reading) is present
+(`application/design_text.wants_text_suggestion`), the request also asks the AI for `suggested_text` (`title_main`,
+`title_accent`, `subtitle`) in the language of the references. If the user wrote any of those fields, the prompt keeps
+the old rules (the AI writes no text) and any text in the reply is ignored. The suggestion is untrusted model output:
+
+- It must be plain text. A field containing `<` or `>`, a control or invisible character, or more characters than a
+  typed field allows (80, 80 and 240) rejects the whole suggestion, as does an empty main title. The same domain rules
+  as typed text apply (`Cover.from_raw`). A rejected suggestion never fails the design: the template still applies,
+  and the user is told to type the text.
+- It never reaches the template. The template rules are unchanged (no literal visible text, placeholders only, the
+  sanitizer on every load). The editor puts the suggestion into the normal fields, only while all three are still empty
+  when the reply arrives, and the text is then escaped by the same path as typed text on every render.
+- The user reviews it: the editor says that the AI suggested the text, the fields stay editable, and saving still
+  requires a main title. Verse references are never changed by the AI.
+- The data-use notice names this behaviour. What leaves the machine does not grow (the references were already sent).
 
 ### T15e: a mismatched key blocks (owner decision)
 

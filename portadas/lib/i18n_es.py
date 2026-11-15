@@ -83,17 +83,27 @@ UI = {
         'Rendering the preview...': 'Generando la vista previa...',
         'Sample title': 'Título de ejemplo',
         'Designing with AI sends the cover text (label, titles, subtitle, key verse, readings) and your style hint to '
-        '{destination}, under its data policy. Nothing else leaves this computer. You are asked once for each provider '
-        'or server.':
+        '{destination}, under its data policy. Nothing else leaves this computer. If you entered only Bible '
+        'references, the AI also writes a suggested title and subtitle, which you can review and edit before saving. '
+        'You are asked once for each provider or server.':
             'Diseñar con IA envía el texto de la portada (etiqueta, títulos, subtítulo, versículo clave, lecturas) y '
-            'su indicación de estilo a {destination}, según su política de datos. Nada más sale de este equipo. Se le '
-            'pregunta una vez por cada proveedor o servidor.',
+            'su indicación de estilo a {destination}, según su política de datos. Nada más sale de este equipo. Si '
+            'usted escribió solo referencias bíblicas, la IA también redacta un título y un subtítulo sugeridos, que '
+            'puede revisar y editar antes de guardar. Se le pregunta una vez por cada proveedor o servidor.',
         'Nothing was sent to the AI.': 'No se envió nada a la IA.',
         'Save': 'Guardar',
         'Send the cover text to the AI?': '¿Enviar el texto de la portada a la IA?',
-        'Sends the cover text and your hint to the AI provider you configured. The AI designs the look; it never '
-        'writes the text.': 'Envía el texto de la portada y su indicación al proveedor de IA que configuró. La IA '
-                            'diseña el aspecto; nunca escribe el texto.',
+        'Sends the cover text and your hint to the AI provider you configured. The AI designs the look and writes no '
+        'text, unless you entered only Bible references: then it also suggests a title and subtitle for you to '
+        'review.':
+            'Envía el texto de la portada y su indicación al proveedor de IA que configuró. La IA diseña el aspecto y '
+            'no escribe texto, salvo que usted escriba solo referencias bíblicas: entonces también sugiere un título '
+            'y un subtítulo para que usted los revise.',
+        'The AI suggested the text: you can edit it.': 'La IA sugirió el texto: puede editarlo.',
+        'The suggested text was not used because you typed text meanwhile.':
+            'No se usó el texto sugerido porque usted escribió texto mientras tanto.',
+        'The suggested text was rejected ({reason}); type the text yourself.':
+            'Se rechazó el texto sugerido ({reason}); escriba usted el texto.',
         'Subtitle:': 'Subtítulo:',
         'Template:': 'Plantilla:',
         'The AI design is ready.': 'El diseño con IA está listo.',
@@ -109,6 +119,12 @@ UI = {
         'The saved API key could not be read. Enter it again in Settings > Configure OpenLP > Covers.':
             'No se pudo leer la clave de API guardada. Escríbala de nuevo en Configuración > Configurar OpenLP > '
             'Portadas.',
+        'This cover uses an AI-designed template. The AI suggested the text: review it and edit it before saving.':
+            'Esta portada usa una plantilla diseñada con IA. La IA sugirió el texto: revíselo y edítelo antes de '
+            'guardar.',
+        'This cover uses an AI-designed template. The AI\'s suggested text was rejected, so type the text yourself.':
+            'Esta portada usa una plantilla diseñada con IA. Se rechazó el texto sugerido por la IA; escriba usted el '
+            'texto.',
         'This cover uses an AI-designed template. The text is still exactly what you typed.':
             'Esta portada usa una plantilla diseñada con IA. El texto sigue siendo exactamente el que usted escribió.',
         'This text does not fit; shorten it or choose another template.':
@@ -427,6 +443,10 @@ MESSAGES = {
     'The reply was empty.': 'La respuesta estaba vacía.',
     '{} The AI answered, but without a design.': '%1 La IA respondió, pero sin ningún diseño.',
     'The AI reply is too long.': 'La respuesta de la IA es demasiado larga.',
+    'The AI did not suggest any text.': 'La IA no sugirió ningún texto.',
+    'The suggested text is not plain text.': 'El texto sugerido no es texto simple.',
+    'The suggested text contains markup.': 'El texto sugerido contiene marcado (HTML).',
+    'The suggested text is not valid: {}': 'El texto sugerido no es válido: %1',
     'The AI answered with an empty reply.': 'La IA respondió con una respuesta vacía.',
     'The AI provider returned an unusable answer.': 'El proveedor de IA devolvió una respuesta inutilizable.',
     'The AI reply is not valid JSON.': 'La respuesta de la IA no es un JSON válido.',

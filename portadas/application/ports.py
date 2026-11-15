@@ -199,6 +199,7 @@ class DesignProposal:
     template_html: str
     icon_svg: str = None
     notes: str = ''
+    suggested_text: object = None  # raw ``suggested_text`` of the reply (untrusted)
 
 
 class CoverDesigner(ABC):

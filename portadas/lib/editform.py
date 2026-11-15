@@ -26,8 +26,11 @@ a render finishes after the user kept typing, its result is dropped and a fresh 
 shows stale content for long and renders never pile up.
 
 The AI design mode asks the configured provider for a template (``DesignCoverWithAI``) on a background job. It sends
-the cover text and a style hint and applies only the sanitised template (and icon) that comes back: the AI never
-writes the visible text. One design runs at a time; closing the dialog cancels it and drops any late callback.
+the cover text and a style hint and applies only the sanitised template (and icon) that comes back. The AI writes
+no visible text, except in one case: when the user entered only Bible references (every free-text field empty), it
+also suggests the title and subtitle. Those are validated as plain text and put into the normal, still empty fields,
+where the user reviews and edits them. One design runs at a time; closing the dialog cancels it and drops any late
+callback.
 """
 import logging
 import uuid
@@ -38,6 +41,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from ..application.design_cover import DesignCoverWithAI
 from ..application.design_prompt import MAX_HINT_CHARS
+from ..application.design_text import STAND_IN_TITLE, wants_text_suggestion
 from ..application.icon_upload import icon_from_png_bytes, icon_from_svg_text
 from ..application.ports import DesignError, RenderError, RepositoryError
 from ..domain.cover import DEFAULT_ICON, DEFAULT_TEMPLATE_ID, MAX_RAW_READINGS, MAX_READINGS, IconKind, IconRef
@@ -83,6 +87,7 @@ class CoverEditForm(QtWidgets.QDialog):
         self._design_job = None
         self._icon_before_design = None  # the icon to bring back when the AI design is dropped
         self._ai_icon = None  # the icon the AI drew, while it is still the selected one
+        self._text_note = ''  # 'suggested' or 'rejected' while the AI's suggested text is what the note talks about
         self._thumb_queue = []
         self._want_thumbnails = thumbnails
         self.warning_labels = {}
@@ -261,7 +266,9 @@ class CoverEditForm(QtWidgets.QDialog):
                                             'For example: warm colours, a stained-glass feel'))
         self.design_button.setText(t('PortadasPlugin.EditForm', 'Design with AI'))
         self.design_button.setToolTip(t('PortadasPlugin.EditForm', 'Sends the cover text and your hint to the AI '
-                                        'provider you configured. The AI designs the look; it never writes the text.'))
+                                        'provider you configured. The AI designs the look and writes no text, unless '
+                                        'you entered only Bible references: then it also suggests a title and '
+                                        'subtitle for you to review.'))
         self.cancel_design_button.setText(t('PortadasPlugin.EditForm', 'Cancel design'))
         self.use_template_button.setText(t('PortadasPlugin.EditForm', 'Use the selected template instead'))
         self.save_button.setText(t('PortadasPlugin.EditForm', 'Save'))
@@ -297,6 +304,7 @@ class CoverEditForm(QtWidgets.QDialog):
         self._loading = True
         try:
             self._icon_before_design = self._ai_icon = None
+            self._text_note = ''
             self._cover_id = None if cover is None else cover.id
             self._created_at = None if cover is None else cover.created_at
             self.label_edit.setText('' if cover is None else cover.label)
@@ -421,10 +429,10 @@ class CoverEditForm(QtWidgets.QDialog):
         label.setText(localize(text))
         label.setVisible(bool(text))
 
-    def _first_problem(self):
+    def _first_problem(self, **overrides):
         """Return ``(cover, None)`` for valid input or ``(None, message)`` with the rule that is broken."""
         try:
-            return self.services.creator.build_cover(**self.values()), None
+            return self.services.creator.build_cover(**{**self.values(), **overrides}), None
         except DomainError as error:
             return None, localize(str(error))
 
@@ -592,8 +600,15 @@ class CoverEditForm(QtWidgets.QDialog):
     # --- AI design -------------------------------------------------------------------------------------------------
     def _show_ai_note(self):
         using_ai = self._custom_template_html is not None
-        self._show(self.ai_note_label, translate('PortadasPlugin.EditForm', 'This cover uses an AI-designed template. '
-                                                 'The text is still exactly what you typed.') if using_ai else '')
+        context = 'PortadasPlugin.EditForm'
+        note = {
+            'suggested': translate(context, 'This cover uses an AI-designed template. The AI suggested the text: '
+                                   'review it and edit it before saving.'),
+            'rejected': translate(context, 'This cover uses an AI-designed template. The AI\'s suggested text was '
+                                  'rejected, so type the text yourself.'),
+        }.get(self._text_note, translate(context, 'This cover uses an AI-designed template. The text is still '
+                                         'exactly what you typed.'))
+        self._show(self.ai_note_label, note if using_ai else '')
         self.use_template_button.setVisible(using_ai)
 
     def _template_picked(self, *_):
@@ -610,6 +625,7 @@ class CoverEditForm(QtWidgets.QDialog):
 
     def _drop_design(self):
         """Forget the AI template; bring back the icon the user had, unless they chose another one since."""
+        self._text_note = ''
         if self._custom_template_html is not None:
             self._custom_template_html = None
             self._show_ai_note()
@@ -637,7 +653,11 @@ class CoverEditForm(QtWidgets.QDialog):
         """Ask the AI for a design of the current cover. One request at a time; the form stays usable meanwhile."""
         if self._design_job is not None or self._closed or self._saving:
             return
-        cover, problem = self._first_problem()
+        values = self.values()
+        suggest = wants_text_suggestion(values['title_main'], values['title_accent'], values['subtitle'],
+                                        values['key_verse'], values['readings'])
+        # Only references: the cover is built with a stand-in title (it is neither sent nor kept) so the AI can suggest.
+        cover, problem = self._first_problem(**({'title_main': STAND_IN_TITLE} if suggest else {}))
         if cover is None:
             self._set_status(problem, error=True)
             return
@@ -666,8 +686,8 @@ class CoverEditForm(QtWidgets.QDialog):
                 notices.accept(destination)
         hint = self.hint_edit.text()
         self._set_status(translate('PortadasPlugin.EditForm', 'Designing with the AI. This can take a minute...'))
-        self._design_job = run_in_background(lambda: (cover, use_case.design(cover, hint)), self._design_done,
-                                             self._design_failed)
+        self._design_job = run_in_background(lambda: (cover, use_case.design(cover, hint, suggest)),
+                                             self._design_done, self._design_failed)
         self._set_designing(True)
 
     def on_cancel_design(self):
@@ -680,19 +700,45 @@ class CoverEditForm(QtWidgets.QDialog):
             return
         self._design_job = None
         cover, designed = outcome
-        applied = designed.apply_to(cover)  # only the template (and an icon the AI drew) change, never the text
+        applied = designed.apply_to(cover)  # template and AI icon only; text is set below
         self._custom_template_html = applied.custom_template_html
         self._set_designing(False)
+        text_status = self._apply_suggested_text(designed)
         if designed.icon is not None:
             if self._ai_icon is None or self.icon() != self._ai_icon:  # keep the user's icon, not an earlier AI one
                 self._icon_before_design = self.icon()
             self._set_custom_icon(applied.icon)
             self._ai_icon = self.icon()
         self._show_ai_note()
-        self._set_status(translate('PortadasPlugin.EditForm', 'The AI design is ready: {notes}').format(
-            notes=redact(designed.notes)) if designed.notes else translate('PortadasPlugin.EditForm',
-                                                                           'The AI design is ready.'))
+        self._set_status(' '.join(part for part in (
+            translate('PortadasPlugin.EditForm', 'The AI design is ready: {notes}').format(
+                notes=redact(designed.notes)) if designed.notes else translate('PortadasPlugin.EditForm',
+                                                                                'The AI design is ready.'),
+            text_status) if part))
         self._schedule_preview()
+
+    def _apply_suggested_text(self, designed):
+        """
+        Put the AI's suggested text (already validated) into the text fields, but only while all three are still
+        empty, so nothing the user typed meanwhile is overwritten. Returns a status sentence, or ``''``.
+        """
+        context = 'PortadasPlugin.EditForm'
+        self._text_note = ''
+        if designed.suggestion_problem:
+            self._text_note = 'rejected'
+            return translate(context, 'The suggested text was rejected ({reason}); type the text yourself.').format(
+                reason=redact(localize(designed.suggestion_problem)))
+        suggestion = designed.suggested_text
+        if suggestion is None:
+            return ''
+        if any(text.strip() for text in (self.title_main_edit.text(), self.title_accent_edit.text(),
+                                         self.subtitle_edit.toPlainText())):
+            return translate(context, 'The suggested text was not used because you typed text meanwhile.')
+        self.title_main_edit.setText(suggestion.title_main)
+        self.title_accent_edit.setText(suggestion.title_accent or '')
+        self.subtitle_edit.setPlainText(suggestion.subtitle or '')
+        self._text_note = 'suggested'
+        return translate(context, 'The AI suggested the text: you can edit it.')
 
     def _design_failed(self, message):
         if self._closed or self._design_job is None:
@@ -713,8 +759,9 @@ class CoverEditForm(QtWidgets.QDialog):
             translate('PortadasPlugin.EditForm', 'Send the cover text to the AI?'),
             translate('PortadasPlugin.EditForm', 'Designing with AI sends the cover text (label, titles, subtitle, key '
                       'verse, readings) and your style hint to {destination}, under its data policy. Nothing else '
-                      'leaves this computer. You are asked once for each provider or server.'
-                      ).format(destination=destination),
+                      'leaves this computer. If you entered only Bible references, the AI also writes a suggested '
+                      'title and subtitle, which you can review and edit before saving. You are asked once for each '
+                      'provider or server.').format(destination=destination),
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
         return answer == QtWidgets.QMessageBox.Yes
 

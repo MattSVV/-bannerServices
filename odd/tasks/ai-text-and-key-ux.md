@@ -51,7 +51,7 @@ This revises the invariant "the AI never writes the cover text" from `odd/tasks/
 
 - [x] A1
 - [x] A2
-- [ ] A3
+- [x] A3
 
 ## Acceptance criteria
 
@@ -64,9 +64,10 @@ This revises the invariant "the AI never writes the cover text" from `odd/tasks/
 
 | Task | Status | Commit | Evidence |
 |------|--------|--------|----------|
-| A1 | done | HASH_A1 | RED: new scroll-area test failed (no `form_scroll_area`). GREEN: tests/test_edit_form.py 32 passed. Gate: 1455 passed, coverage 97.45%; the only failure is `test_t15b_hardening::test_many_distinct_css_problems_cost_linear_time_and_fail_closed` (2.0 s timing assert), which also fails on the untouched base under `--cov` in the full run and passes alone (environmental, pre-existing). Route: delegated direct writer. |
-| A2 | done | HASH_A2 | RED: 12 new/changed settings-tab tests failed (no `save_key_button`/`show_key_button`, OK still stored a typed key). GREEN: test_settings_tab + test_key_origin + test_i18n 94 passed. Gate: 1465 passed, coverage 97.45%; same single pre-existing timing failure as A1. Route: delegated direct writer. |
+| A1 | done | 6196f75 | RED: new scroll-area test failed (no `form_scroll_area`). GREEN: tests/test_edit_form.py 32 passed. Gate: 1455 passed, coverage 97.45%; the only failure is `test_t15b_hardening::test_many_distinct_css_problems_cost_linear_time_and_fail_closed` (2.0 s timing assert), which also fails on the untouched base under `--cov` in the full run and passes alone (environmental, pre-existing). Route: delegated direct writer. |
+| A2 | done | c13b492 | RED: 12 new/changed settings-tab tests failed (no `save_key_button`/`show_key_button`, OK still stored a typed key). GREEN: test_settings_tab + test_key_origin + test_i18n 94 passed. Gate: 1465 passed, coverage 97.45%; same single pre-existing timing failure as A1. Route: delegated direct writer. |
+| A3 | done | HASH_A3 | RED: new prompt, parse/use-case and editor tests failed at collection (no `application/design_text`). GREEN: 103 + 36 targeted tests passed. Gate: `scripts/check.sh` fully passed, 1510 passed, coverage 97.51% (the t15b timing test passed this run). Route: delegated direct writer. |
 
 ## Next step
 
-A3.
+All tasks done on the branch. Owner decides push and PR. Note: `test_t15b_hardening::test_many_distinct_css_problems_cost_linear_time_and_fail_closed` is timing-sensitive (2.0 s) and flaked under `--cov` in two earlier full runs, also on the untouched base.
