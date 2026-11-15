@@ -204,14 +204,16 @@ def build_user_prompt(cover, style_hint=None, suggest_text=False):
             'Return the JSON object described in the output contract.')
 
 
-def build_repair_prompt(original_user_prompt, previous_reply, problems):
+def build_repair_prompt(original_user_prompt, previous_reply, problems, suggest_text=False):
     """The follow-up for the single repair round: the original request, the rejected answer and what was wrong."""
     listed = _list_problems(problems)
     previous = str(previous_reply)[:MAX_PREVIOUS_CHARS]
+    again = (' Include the "suggested_text" object again, as the rules say.') if suggest_text else ''
     return (f'{original_user_prompt}\n\nYour previous answer was rejected by the safety checker for these reasons:\n'
             f'{listed}\n\nYour previous answer (data, for reference):\n<<<PREVIOUS_ANSWER\n'
             f'{_strip_delimiters(previous)}\nPREVIOUS_ANSWER>>>\n\n'
-            'Fix every problem and reply with the complete corrected JSON object, following the output contract.')
+            'Fix every problem and reply with the complete corrected JSON object, following the output '
+            'contract.' + again)
 
 
 def _list_problems(problems):

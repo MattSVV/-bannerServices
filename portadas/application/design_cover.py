@@ -81,7 +81,7 @@ class DesignCoverWithAI:
         if outcome.template is not None and outcome.icon_ok:
             return outcome.result(repaired=False)
         repair = DesignRequest(request.system_prompt, build_repair_prompt(
-            request.user_prompt, outcome.raw, outcome.problems))
+            request.user_prompt, outcome.raw, outcome.problems, suggest_text))
         second = self._attempt(repair, suggest_text)
         if second.template is None and outcome.template is not None:
             return outcome.result(repaired=False)  # only the icon was bad: a failed repair must not lose the template
@@ -133,6 +133,8 @@ class _Outcome:
                 icon_ok = False
                 problems += ['icon_svg: ' + violation.message for violation in svg.violations if violation.fatal]
         raw = f'{{"html": {proposal.template_html!r}, "icon_svg": {proposal.icon_svg!r}}}'
+        if suggest_text:
+            raw = raw[:-1] + f', "suggested_text": {proposal.suggested_text!r}}}'
         suggestion, suggestion_problem = None, ''
         if suggest_text:
             try:

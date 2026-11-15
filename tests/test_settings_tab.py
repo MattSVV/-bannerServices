@@ -492,3 +492,62 @@ def test_clear_then_ok_still_deletes_the_key(make_tab):
     tab.save()
 
     assert store.keys == {}
+
+
+ODD_KEY = 'plain-odd-shaped-secret-0123456789'  # no known key shape: only register_secret can redact it
+
+
+def test_test_connection_with_a_typed_key_registers_it_so_an_echoing_error_is_redacted(make_tab, qtbot):
+    def probe(config, api_key):
+        raise RuntimeError(f'bad key {api_key}')
+
+    tab = make_tab(test_connection=probe)
+    tab.api_key_edit.setText(ODD_KEY)
+
+    tab.test_button.click()
+    wait_for_result(qtbot, tab)
+
+    assert ODD_KEY not in tab.test_result_label.text()
+
+
+def test_ok_while_a_key_test_runs_cancels_it_so_the_key_is_not_stored(make_tab, qtbot):
+    release = threading.Event()
+    store = MemoryStore()
+    tab = make_tab(store, test_connection=lambda config, api_key: release.wait(5) and 'Connected.')
+    tab.api_key_edit.setText(NEW)
+    tab.save_key_button.click()
+
+    tab.save()
+    release.set()
+    qtbot.wait(150)
+
+    assert store.keys == {} and tab._test_job is None
+    assert tab.save_key_button.isEnabled() and tab.test_button.isEnabled()
+
+
+def test_cancel_while_a_key_test_runs_cancels_it_so_the_key_is_not_stored(make_tab, qtbot):
+    release = threading.Event()
+    store = MemoryStore()
+    tab = make_tab(store, test_connection=lambda config, api_key: release.wait(5) and 'Connected.')
+    tab.api_key_edit.setText(NEW)
+    tab.save_key_button.click()
+
+    tab.cancel()
+    release.set()
+    qtbot.wait(150)
+
+    assert store.keys == {} and tab._test_job is None
+
+
+def test_a_saved_key_leaves_the_field_alone_when_the_user_typed_something_else_meanwhile(make_tab, qtbot):
+    release = threading.Event()
+    store = MemoryStore()
+    tab = make_tab(store, test_connection=lambda config, api_key: release.wait(5) and 'Connected.')
+    tab.api_key_edit.setText(NEW)
+    tab.save_key_button.click()
+    tab.api_key_edit.setText(NEW + '-other')
+
+    release.set()
+    qtbot.waitUntil(lambda: store.keys.get('openai') == NEW, timeout=5000)
+
+    assert tab.api_key_edit.text() == NEW + '-other'

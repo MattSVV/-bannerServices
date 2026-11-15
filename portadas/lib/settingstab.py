@@ -304,6 +304,7 @@ class PortadasSettingsTab(SettingsTab):
             return None
 
     def save(self):
+        self._cancel_test()  # a Save key test still running must not store its key after the dialog closed
         warnings = []
         config = self.current_config()
         previous = load_ai_config(self.settings)
@@ -359,6 +360,8 @@ class PortadasSettingsTab(SettingsTab):
         api_key = typed or self._stored_key(provider)
         state = self._server_state(provider)
         self._cancel_test()
+        if typed:
+            register_secret(typed)  # redact it from any provider message, like Save key does
         if api_key and not typed and state is not None and state[1] != KEY_OK:
             # The stored key belongs to another server (an imported settings file may have changed the address).
             self.test_result_label.setText(key_block_message(state[1], state[0]))
@@ -398,8 +401,9 @@ class PortadasSettingsTab(SettingsTab):
             return
         self._key_saved[provider] = True
         self._pending_clear.discard(provider)
-        self.api_key_edit.clear()
-        self._hide_key()
+        if self.api_key_edit.text().strip() == key:  # keep whatever the user typed meanwhile
+            self.api_key_edit.clear()
+            self._hide_key()
         self.refresh_key_state()
         self.test_result_label.setText(redact(localize(message)) + ' ' + translate(context, 'The API key was saved.'))
 

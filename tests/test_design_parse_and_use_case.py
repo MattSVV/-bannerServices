@@ -368,3 +368,24 @@ def test_the_suggestion_of_the_repair_round_is_the_one_used():
 
     assert designed.repaired and designed.suggested_text.title_main == 'Firmes ante la prueba'
     assert 'suggested_text' in designer.requests[1].system_prompt
+
+
+def test_the_repair_round_in_suggest_mode_asks_for_and_returns_the_suggested_text():
+    bad = GOOD_HTML.replace('{{title_main}}', 'Texto fijo')
+    designer = FakeDesigner(suggest_reply(html=bad), suggest_reply())
+
+    designed = DesignCoverWithAI(designer).design(verses_only_cover(), None, suggest_text=True)
+
+    repair = designer.requests[1].user_prompt
+    assert designed.repaired is True and designed.suggested_text.title_main == 'Firmes ante la prueba'
+    assert '"suggested_text"' in repair.split('<<<PREVIOUS_ANSWER')[1]  # the previous answer carries it back
+    assert 'suggested_text' in repair.split('PREVIOUS_ANSWER>>>')[1]  # and the follow-up asks for it again
+
+
+def test_the_repair_round_outside_suggest_mode_does_not_mention_suggested_text():
+    bad = GOOD_HTML.replace('{{title_main}}', 'Texto fijo')
+    designer = FakeDesigner(reply(html=bad), reply())
+
+    DesignCoverWithAI(designer).design(cover())
+
+    assert 'suggested_text' not in designer.requests[1].user_prompt
